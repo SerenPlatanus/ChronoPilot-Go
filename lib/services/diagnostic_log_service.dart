@@ -73,42 +73,36 @@ class DiagnosticLogService {
       origin: origin,
       startedAt: DateTime.now(),
     );
-    return runZoned(
-      () async {
-        Object? terminalError;
-        StackTrace? terminalStackTrace;
+    return runZoned(() async {
+      Object? terminalError;
+      StackTrace? terminalStackTrace;
+      record(module: 'refresh', operation: 'start', message: '完整刷新开始');
+      try {
+        return await action();
+      } on Object catch (error, stackTrace) {
+        terminalError = error;
+        terminalStackTrace = stackTrace;
+        rethrow;
+      } finally {
+        final elapsed = DateTime.now()
+            .difference(context.startedAt)
+            .inMilliseconds;
+        context.durationMs = elapsed;
+        context.moduleResults['总耗时'] = '${elapsed}ms';
         record(
+          level: terminalError == null
+              ? CelechronLogLevel.info
+              : CelechronLogLevel.error,
           module: 'refresh',
-          operation: 'start',
-          message: '完整刷新开始',
+          operation: 'finish',
+          message: terminalError == null ? '完整刷新结束' : '完整刷新异常结束',
+          durationMs: elapsed,
+          error: terminalError,
+          stackTrace: terminalStackTrace,
         );
-        try {
-          return await action();
-        } on Object catch (error, stackTrace) {
-          terminalError = error;
-          terminalStackTrace = stackTrace;
-          rethrow;
-        } finally {
-          final elapsed =
-              DateTime.now().difference(context.startedAt).inMilliseconds;
-          context.durationMs = elapsed;
-          context.moduleResults['总耗时'] = '${elapsed}ms';
-          record(
-            level: terminalError == null
-                ? CelechronLogLevel.info
-                : CelechronLogLevel.error,
-            module: 'refresh',
-            operation: 'finish',
-            message: terminalError == null ? '完整刷新结束' : '完整刷新异常结束',
-            durationMs: elapsed,
-            error: terminalError,
-            stackTrace: terminalStackTrace,
-          );
-          _lastRefreshContext = context;
-        }
-      },
-      zoneValues: {_contextKey: context},
-    );
+        _lastRefreshContext = context;
+      }
+    }, zoneValues: {_contextKey: context});
   }
 
   void setModuleResult(String module, String result) {
@@ -197,11 +191,7 @@ class DiagnosticLogService {
       platform: Platform.operatingSystem,
       exportedAt: now,
     );
-    await file.writeAsString(
-      contents,
-      encoding: utf8,
-      flush: true,
-    );
+    await file.writeAsString(contents, encoding: utf8, flush: true);
     await _pruneExports(directory);
     await SharePlus.instance.share(
       ShareParams(
@@ -231,27 +221,29 @@ class DiagnosticLogService {
 
   void _enqueuePersist(String line) {
     // 写入链保证日志顺序；单次失败被吸收，不能反向影响业务刷新。
-    _fileQueue = _fileQueue.then((_) async {
-      final file = await _bufferFile();
-      await file.writeAsString(
-        '$line\n',
-        mode: FileMode.append,
-        encoding: utf8,
-        flush: false,
-      );
-      if (await file.length() > 2 * 1024 * 1024) {
-        final recent = await _readRecentLines(file: file);
-        await file.writeAsString(
-          recent.isEmpty ? '' : '$recent\n',
-          encoding: utf8,
-          flush: true,
-        );
-      }
-    }).catchError((Object error, StackTrace stackTrace) {
-      if (kDebugMode) {
-        debugPrint('诊断日志持久化失败：$error\n$stackTrace');
-      }
-    });
+    _fileQueue = _fileQueue
+        .then((_) async {
+          final file = await _bufferFile();
+          await file.writeAsString(
+            '$line\n',
+            mode: FileMode.append,
+            encoding: utf8,
+            flush: false,
+          );
+          if (await file.length() > 2 * 1024 * 1024) {
+            final recent = await _readRecentLines(file: file);
+            await file.writeAsString(
+              recent.isEmpty ? '' : '$recent\n',
+              encoding: utf8,
+              flush: true,
+            );
+          }
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          if (kDebugMode) {
+            debugPrint('诊断日志持久化失败：$error\n$stackTrace');
+          }
+        });
   }
 
   Future<File> _bufferFile() async {
@@ -261,13 +253,15 @@ class DiagnosticLogService {
     );
     await logDirectory.create(recursive: true);
     return File(
-        '${logDirectory.path}${Platform.pathSeparator}$_bufferFileName');
+      '${logDirectory.path}${Platform.pathSeparator}$_bufferFileName',
+    );
   }
 
   Future<Directory> _exportDirectory() async {
     final directory = await getApplicationDocumentsDirectory();
-    final exportDirectory =
-        Directory('${directory.path}${Platform.pathSeparator}CelechronLogs');
+    final exportDirectory = Directory(
+      '${directory.path}${Platform.pathSeparator}CelechronLogs',
+    );
     await exportDirectory.create(recursive: true);
     return exportDirectory;
   }
@@ -276,18 +270,21 @@ class DiagnosticLogService {
     final target = file ?? await _bufferFile();
     if (!await target.exists()) return currentText();
     final lines = await target.readAsLines(encoding: utf8);
-    final start =
-        lines.length > _maxMemoryLines ? lines.length - _maxMemoryLines : 0;
+    final start = lines.length > _maxMemoryLines
+        ? lines.length - _maxMemoryLines
+        : 0;
     return lines.sublist(start).join('\n');
   }
 
   Future<void> _pruneExports(Directory directory) async {
     final files = await directory
         .list()
-        .where((entity) =>
-            entity is File &&
-            entity.path.contains('celechron-test-log-') &&
-            entity.path.endsWith('.txt'))
+        .where(
+          (entity) =>
+              entity is File &&
+              entity.path.contains('celechron-test-log-') &&
+              entity.path.endsWith('.txt'),
+        )
         .cast<File>()
         .toList();
     files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
@@ -309,9 +306,9 @@ class DiagnosticLogService {
       sanitizeDiagnosticText(value);
 
   static String _sanitizeStack(StackTrace stackTrace) {
-    return _sanitize(stackTrace.toString())
-        .replaceAll('\r\n', r'\n')
-        .replaceAll('\n', r'\n');
+    return _sanitize(
+      stackTrace.toString(),
+    ).replaceAll('\r\n', r'\n').replaceAll('\n', r'\n');
   }
 
   static String _sanitize(String value) {

@@ -121,9 +121,10 @@ void main() {
     expect(sanitized, contains('/cas/login'));
   });
 
-  test('response summary reports structure without business response values',
-      () {
-    final summary = responseSummary('''
+  test(
+    'response summary reports structure without business response values',
+    () {
+      final summary = responseSummary('''
       {
         "success": true,
         "name": "张三",
@@ -135,20 +136,21 @@ void main() {
       }
     ''');
 
-    expect(summary, contains('JSON对象'));
-    expect(summary, contains('字段数=7'));
-    expect(summary, contains('常见字段=success,data'));
-    for (final privateValue in [
-      '张三',
-      '1234567890',
-      '88.50',
-      '95',
-      '高等数学',
-      '期末考试'
-    ]) {
-      expect(summary, isNot(contains(privateValue)));
-    }
-  });
+      expect(summary, contains('JSON对象'));
+      expect(summary, contains('字段数=7'));
+      expect(summary, contains('常见字段=success,data'));
+      for (final privateValue in [
+        '张三',
+        '1234567890',
+        '88.50',
+        '95',
+        '高等数学',
+        '期末考试',
+      ]) {
+        expect(summary, isNot(contains(privateValue)));
+      }
+    },
+  );
 
   test('diagnostic sanitizer removes structured personal fields', () {
     final sanitized = DiagnosticLogService.sanitizeForDiagnostic(

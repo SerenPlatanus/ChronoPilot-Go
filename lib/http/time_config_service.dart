@@ -20,7 +20,9 @@ class TimeConfigService {
   }
 
   Future<Tuple3<Exception?, String?, DataSourceStatus>> getConfig(
-      HttpClient httpClient, String semesterId) async {
+    HttpClient httpClient,
+    String semesterId,
+  ) async {
     final key = calendarObjectKeyForSemester(semesterId);
     final uri = calendarConfigUriForSemester(semesterId);
     final context = '校历接口（学年学期 $semesterId，请求类型 配置）';
@@ -29,19 +31,22 @@ class TimeConfigService {
     }
 
     try {
-      final request = await httpClient.getUrl(uri).timeout(
+      final request = await httpClient
+          .getUrl(uri)
+          .timeout(
             const Duration(seconds: 8),
             onTimeout: () => throw requestTimeout(),
           );
       request.followRedirects = false;
       final response = await request.close().timeout(
-            const Duration(seconds: 8),
-            onTimeout: () => throw requestTimeout(),
-          );
+        const Duration(seconds: 8),
+        onTimeout: () => throw requestTimeout(),
+      );
       final body = await readResponseBody(response, context: context);
       final contentType =
           response.headers.value(HttpHeaders.contentTypeHeader) ?? '<缺失>';
-      final noSuchKey = response.statusCode == HttpStatus.notFound ||
+      final noSuchKey =
+          response.statusCode == HttpStatus.notFound ||
           body.contains('<Code>NoSuchKey</Code>');
 
       if (noSuchKey) {
@@ -55,7 +60,8 @@ class TimeConfigService {
           statusCode: response.statusCode,
           contentType: contentType,
           cacheUsed: fallback.status == DataSourceStatus.cache,
-          message: '远程配置未发布，${fallback.status.label}；'
+          message:
+              '远程配置未发布，${fallback.status.label}；'
               '缓存时间=${fallback.cachedAt ?? '<无>'}',
         );
         return Tuple3(
@@ -116,7 +122,8 @@ class TimeConfigService {
         operation: semesterId,
         requestUri: uri,
         cacheUsed: fallback.status == DataSourceStatus.cache,
-        message: '实时请求失败，${fallback.status.label}；'
+        message:
+            '实时请求失败，${fallback.status.label}；'
             '缓存时间=${fallback.cachedAt ?? '<无>'}',
         error: error,
         stackTrace: stackTrace,
@@ -139,10 +146,7 @@ class TimeConfigService {
     final exactCache = _db?.getCachedWebPage('timeConfig_$semesterId');
     if (exactCache != null) {
       try {
-        decodeAndValidateCalendarConfig(
-          exactCache,
-          context: '$context 本地缓存',
-        );
+        decodeAndValidateCalendarConfig(exactCache, context: '$context 本地缓存');
         return _CalendarFallback(
           exactCache,
           DataSourceStatus.cache,
@@ -181,10 +185,7 @@ class TimeConfigService {
       }
     }
     return _CalendarFallback(
-      buildSafeDefaultCalendarConfig(
-        semesterId,
-        template: template,
-      ),
+      buildSafeDefaultCalendarConfig(semesterId, template: template),
       DataSourceStatus.fallback,
     );
   }

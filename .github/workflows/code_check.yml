@@ -1,38 +1,16 @@
-name: Check code issues
-
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-
+name: Check Android planner
+on: [push, pull_request, workflow_dispatch]
 jobs:
-  flutter_analyze:
+  check:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.38.1'
           channel: stable
           cache: true
-
-      - name: Verify Flutter installation
-        run: flutter --version
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Check code formatting
-        run: dart format --output=none --set-exit-if-changed .
-
-      - name: Analyze code
-        run: flutter analyze --no-fatal-infos
-
-      # - name: Run tests
-      #   run: flutter test
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test

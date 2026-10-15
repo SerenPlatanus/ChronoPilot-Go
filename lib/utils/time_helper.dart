@@ -10,9 +10,7 @@ class TimeHelper {
   static final RegExp _timeRangePattern = RegExp(
     r'[（(]?\s*(\d{1,2}:\d{2})\s*[-–—~～至]\s*(\d{1,2}:\d{2})\s*[）)]?',
   );
-  static final RegExp _examWeekDayPattern = RegExp(
-    r'第\s*(\d+)\s*天',
-  );
+  static final RegExp _examWeekDayPattern = RegExp(r'第\s*(\d+)\s*天');
 
   static List<DateTime> parseExamDateTime(String datetimeStr) {
     final timeMatch = _timeRangePattern.firstMatch(datetimeStr);
@@ -75,20 +73,9 @@ class TimeHelper {
     };
   }
 
-  static DateTime _dateTimeWithTime(
-    int year,
-    int month,
-    int day,
-    String time,
-  ) {
+  static DateTime _dateTimeWithTime(int year, int month, int day, String time) {
     final parts = time.split(':');
-    return DateTime(
-      year,
-      month,
-      day,
-      int.parse(parts[0]),
-      int.parse(parts[1]),
-    );
+    return DateTime(year, month, day, int.parse(parts[0]), int.parse(parts[1]));
   }
 
   static String chineseDateTime(DateTime dateTime) {
@@ -146,9 +133,19 @@ class TimeHelper {
 
   static String chineseDayRelation(DateTime date) {
     var day = date.copyWith(
-        hour: 0, minute: 0, second: 0, millisecond: 0, microsecond: 0);
+      hour: 0,
+      minute: 0,
+      second: 0,
+      millisecond: 0,
+      microsecond: 0,
+    );
     var today = DateTime.now().copyWith(
-        hour: 0, minute: 0, second: 0, millisecond: 0, microsecond: 0);
+      hour: 0,
+      minute: 0,
+      second: 0,
+      millisecond: 0,
+      microsecond: 0,
+    );
     var diff = day.difference(today).inDays;
     if (diff == 0) {
       return '';

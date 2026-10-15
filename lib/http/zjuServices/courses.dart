@@ -15,13 +15,18 @@ import 'response_utils.dart';
 
 @visibleForTesting
 Uri? coursesMetaRefreshTarget(String body, Uri source) {
-  final metaTags = RegExp(r'<meta\b[^>]*>', caseSensitive: false)
-      .allMatches(body)
-      .map((match) => match.group(0) ?? '');
-  final refreshAttribute =
-      RegExp(r'''http-equiv\s*=\s*["']?refresh''', caseSensitive: false);
-  final urlAttribute =
-      RegExp(r'''url\s*=\s*["']?([^"' >;]+)''', caseSensitive: false);
+  final metaTags = RegExp(
+    r'<meta\b[^>]*>',
+    caseSensitive: false,
+  ).allMatches(body).map((match) => match.group(0) ?? '');
+  final refreshAttribute = RegExp(
+    r'''http-equiv\s*=\s*["']?refresh''',
+    caseSensitive: false,
+  );
+  final urlAttribute = RegExp(
+    r'''url\s*=\s*["']?([^"' >;]+)''',
+    caseSensitive: false,
+  );
   for (final tag in metaTags) {
     if (!refreshAttribute.hasMatch(tag)) continue;
     final rawTarget = urlAttribute.firstMatch(tag)?.group(1);
@@ -49,7 +54,8 @@ class Courses {
   }
 
   Future<Tuple3<Exception?, List<Todo>, DataSourceStatus>> getTodo(
-      HttpClient httpClient) async {
+    HttpClient httpClient,
+  ) async {
     // 认证失败只允许重建一次业务 SESSION；网络或解析失败直接进入缓存降级。
     try {
       var relogged = false;
@@ -77,11 +83,7 @@ class Courses {
             _session = null;
             await login(httpClient, _iPlanetDirectoryPro);
           }
-          data = await _fetchTodo(
-            httpClient,
-            relogged: true,
-            retried: true,
-          );
+          data = await _fetchTodo(httpClient, relogged: true, retried: true);
         } on AuthenticationExpiredException catch (secondError) {
           throw LoginExpiredException(
             "学在浙大：自动重登失败，请手动重新登录",
@@ -115,8 +117,9 @@ class Courses {
         stackTrace: stackTrace,
       );
       final cached = _readCachedTodos();
-      final status =
-          cached.used ? DataSourceStatus.cache : DataSourceStatus.unavailable;
+      final status = cached.used
+          ? DataSourceStatus.cache
+          : DataSourceStatus.unavailable;
       DiagnosticLogService.instance.record(
         level: CelechronLogLevel.warning,
         module: '学在浙大作业',
@@ -125,7 +128,7 @@ class Courses {
         cacheUsed: cached.used,
         message: cached.used
             ? '实时请求失败，使用缓存，${cached.todos.length} 条；'
-                '缓存时间=${cached.cachedAt ?? '<未知>'}'
+                  '缓存时间=${cached.cachedAt ?? '<未知>'}'
             : '实时请求失败，且没有可用缓存',
         error: error,
         stackTrace: stackTrace,
@@ -140,8 +143,10 @@ class Courses {
     bool retried = false,
   }) async {
     final request = await _createTodoRequest(httpClient);
-    final response = await request.close().timeout(const Duration(seconds: 8),
-        onTimeout: () => throw requestTimeout());
+    final response = await request.close().timeout(
+      const Duration(seconds: 8),
+      onTimeout: () => throw requestTimeout(),
+    );
     final body = await readResponseText(
       response,
       context: '学在浙大作业接口',
@@ -150,20 +155,26 @@ class Courses {
       relogged: relogged,
       retried: retried,
     );
-    final data =
-        decodeJsonMap(body, context: '学在浙大作业接口；HTTP ${response.statusCode}');
+    final data = decodeJsonMap(
+      body,
+      context: '学在浙大作业接口；HTTP ${response.statusCode}',
+    );
     if (jsonIndicatesAuthenticationFailure(data)) {
       throw AuthenticationExpiredException(
-          '学在浙大作业接口：登录态已失效；HTTP ${response.statusCode}'
-          '；响应摘要：${responseSummary(body)}');
+        '学在浙大作业接口：登录态已失效；HTTP ${response.statusCode}'
+        '；响应摘要：${responseSummary(body)}',
+      );
     }
     return data;
   }
 
   Future<HttpClientRequest> _createTodoRequest(HttpClient httpClient) async {
-    final request = await httpClient.getUrl(_todoUri).timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => throw requestTimeout());
+    final request = await httpClient
+        .getUrl(_todoUri)
+        .timeout(
+          const Duration(seconds: 8),
+          onTimeout: () => throw requestTimeout(),
+        );
     request.followRedirects = false;
     request.cookies.add(_session!);
     return request;
@@ -176,9 +187,7 @@ class Courses {
     }
     try {
       return _CachedTodos(
-        Todo.getAllFromCourses(
-          decodeJsonMap(cached, context: '学在浙大作业缓存'),
-        ),
+        Todo.getAllFromCourses(decodeJsonMap(cached, context: '学在浙大作业缓存')),
         true,
         cachedAt: _db?.getCachedWebPage("courses_todo_timestamp"),
       );
@@ -292,8 +301,10 @@ class Courses {
         return false;
       }
 
-      final domain =
-          rawDomain.trim().toLowerCase().replaceFirst(RegExp(r'^\.'), '');
+      final domain = rawDomain.trim().toLowerCase().replaceFirst(
+        RegExp(r'^\.'),
+        '',
+      );
 
       final host = uri.host.toLowerCase();
 
@@ -303,8 +314,9 @@ class Courses {
         return false;
       }
 
-      final path =
-          cookie.path == null || cookie.path!.isEmpty ? '/' : cookie.path!;
+      final path = cookie.path == null || cookie.path!.isEmpty
+          ? '/'
+          : cookie.path!;
 
       return uri.path.startsWith(path);
     }
@@ -331,9 +343,7 @@ class Courses {
           ..secure = iPlanetDirectoryPro.secure;
     storeCookie(trustedSsoCookie, Uri.parse('https://zjuam.zju.edu.cn/'));
 
-    var current = Uri.parse(
-      'https://courses.zju.edu.cn/user/index',
-    );
+    var current = Uri.parse('https://courses.zju.edu.cn/user/index');
 
     // Keycloak/CAS 可能经过多次跳转，略微提高上限。
     for (var redirectCount = 0; redirectCount < 15; redirectCount++) {
@@ -355,7 +365,9 @@ class Courses {
             'hop=$redirectCount；发送Cookie名称=${cookieNames(outgoingCookies)}',
       );
 
-      final request = await httpClient.getUrl(current).timeout(
+      final request = await httpClient
+          .getUrl(current)
+          .timeout(
             const Duration(seconds: 8),
             onTimeout: () => throw requestTimeout(),
           );
@@ -364,9 +376,9 @@ class Courses {
       request.cookies.addAll(outgoingCookies);
 
       final response = await request.close().timeout(
-            const Duration(seconds: 8),
-            onTimeout: () => throw requestTimeout(),
-          );
+        const Duration(seconds: 8),
+        onTimeout: () => throw requestTimeout(),
+      );
 
       final responseCookies = List<Cookie>.from(response.cookies);
 
@@ -381,15 +393,13 @@ class Courses {
         }
       }
 
-      final body = await readResponseBody(
-        response,
-        context: '学在浙大登录',
-      );
+      final body = await readResponseBody(response, context: '学在浙大登录');
 
       final location = response.headers.value(HttpHeaders.locationHeader);
 
-      final redirectTarget =
-          location == null ? null : current.resolve(location);
+      final redirectTarget = location == null
+          ? null
+          : current.resolve(location);
 
       final traceLine = [
         'hop=$redirectCount',
@@ -436,12 +446,14 @@ class Courses {
         continue;
       }
 
-      final successStatus = response.statusCode >= HttpStatus.ok &&
+      final successStatus =
+          response.statusCode >= HttpStatus.ok &&
           response.statusCode < HttpStatus.multipleChoices;
 
       // Courses 现网登录链会返回 HTTP 200 meta-refresh，它仍是中间跳转。
-      final metaRefresh =
-          successStatus ? coursesMetaRefreshTarget(body, current) : null;
+      final metaRefresh = successStatus
+          ? coursesMetaRefreshTarget(body, current)
+          : null;
       if (metaRefresh != null) {
         redirectTrace.add(
           'hop=$redirectCount；HTTP 200 meta-refresh='
@@ -451,8 +463,9 @@ class Courses {
         continue;
       }
 
-      final sessionCanAccessTodo =
-          cookiesFor(_todoUri).any((cookie) => cookie.name == 'session');
+      final sessionCanAccessTodo = cookiesFor(
+        _todoUri,
+      ).any((cookie) => cookie.name == 'session');
 
       // 只有真正完成所有重定向，并成功访问 courses 页面后，
       // 才认定业务登录成功。
@@ -465,8 +478,8 @@ class Courses {
 
       final terminalIsAuthenticationPage =
           (current.host == 'zjuam.zju.edu.cn' &&
-                  current.path.startsWith('/cas/login')) ||
-              current.host == 'identity.zju.edu.cn';
+              current.path.startsWith('/cas/login')) ||
+          current.host == 'identity.zju.edu.cn';
       if (response.statusCode == HttpStatus.unauthorized ||
           response.statusCode == HttpStatus.forbidden ||
           (successStatus && terminalIsAuthenticationPage)) {

@@ -231,9 +231,9 @@ class DiagnosticLogEntry {
     if (timestamp == null) return null;
 
     final fieldText = line.substring(firstSeparator + 3);
-    final matches = RegExp(r'(?:^| \| )([A-Za-z][A-Za-z0-9]*)=')
-        .allMatches(fieldText)
-        .toList();
+    final matches = RegExp(
+      r'(?:^| \| )([A-Za-z][A-Za-z0-9]*)=',
+    ).allMatches(fieldText).toList();
     if (matches.isEmpty) return null;
     final fields = <String, String>{};
     for (var index = 0; index < matches.length; index++) {
@@ -354,18 +354,22 @@ class DiagnosticReportParser {
   ) {
     final startEntries = entries
         .where(
-            (entry) => entry.module == 'refresh' && entry.operation == 'start')
+          (entry) => entry.module == 'refresh' && entry.operation == 'start',
+        )
         .toList();
     final finishEntries = entries
         .where(
-            (entry) => entry.module == 'refresh' && entry.operation == 'finish')
+          (entry) => entry.module == 'refresh' && entry.operation == 'finish',
+        )
         .toList();
     final startedAt = startEntries.isNotEmpty
         ? startEntries.first.timestampUtc
         : entries.first.timestampUtc;
-    final finishedAt =
-        finishEntries.isEmpty ? null : finishEntries.last.timestampUtc;
-    final duration = finishEntries
+    final finishedAt = finishEntries.isEmpty
+        ? null
+        : finishEntries.last.timestampUtc;
+    final duration =
+        finishEntries
             .map((entry) => entry.durationMs)
             .whereType<int>()
             .lastOrNull ??
@@ -373,21 +377,24 @@ class DiagnosticReportParser {
     final origin = startEntries.isNotEmpty
         ? startEntries.first.source
         : entries.first.source;
-    final shareEntries =
-        entries.where((entry) => entry.operation == 'shareFlight').toList();
-    final yielded =
-        entries.any((entry) => entry.operation == 'backgroundYield');
+    final shareEntries = entries
+        .where((entry) => entry.operation == 'shareFlight')
+        .toList();
+    final yielded = entries.any(
+      (entry) => entry.operation == 'backgroundYield',
+    );
     final disposition = shareEntries.isNotEmpty
         ? DiagnosticRefreshDisposition.shared
         : yielded
-            ? DiagnosticRefreshDisposition.backgroundYielded
-            : DiagnosticRefreshDisposition.executed;
+        ? DiagnosticRefreshDisposition.backgroundYielded
+        : DiagnosticRefreshDisposition.executed;
     final relatedRefreshId = shareEntries
         .map((entry) => entry.relatedRefreshId)
         .whereType<String>()
         .lastOrNull;
-    final topLevelFailureEntry =
-        finishEntries.where(_isTopLevelFailureEntry).firstOrNull;
+    final topLevelFailureEntry = finishEntries
+        .where(_isTopLevelFailureEntry)
+        .firstOrNull;
 
     final moduleBuilders = <String, _ModuleBuilder>{};
     if (disposition == DiagnosticRefreshDisposition.executed) {
@@ -396,22 +403,26 @@ class DiagnosticReportParser {
         if (canonical == null) continue;
         moduleBuilders
             .putIfAbsent(canonical, () => _ModuleBuilder(canonical))
-            .add(entry,
-                expectedFallback: _isExpectedCalendarFallback(entry, entries));
+            .add(
+              entry,
+              expectedFallback: _isExpectedCalendarFallback(entry, entries),
+            );
       }
     }
     final modules = disposition == DiagnosticRefreshDisposition.executed
         ? moduleOrder
-            .map((name) =>
-                moduleBuilders[name]?.build() ??
-                DiagnosticModuleReport(
-                  name: name,
-                  state: DiagnosticModuleState.notExecuted,
-                  relogged: false,
-                  retried: false,
-                  reason: '本次日志中没有该模块的执行记录。',
-                ))
-            .toList()
+              .map(
+                (name) =>
+                    moduleBuilders[name]?.build() ??
+                    DiagnosticModuleReport(
+                      name: name,
+                      state: DiagnosticModuleState.notExecuted,
+                      relogged: false,
+                      retried: false,
+                      reason: '本次日志中没有该模块的执行记录。',
+                    ),
+              )
+              .toList()
         : <DiagnosticModuleReport>[];
 
     final issues = _buildIssues(
@@ -423,16 +434,18 @@ class DiagnosticReportParser {
     );
     if (startEntries.isNotEmpty && finishEntries.isEmpty) {
       final entry = startEntries.first;
-      issues.add(DiagnosticIssue(
-        id: '$refreshId-incomplete',
-        category: DiagnosticIssueCategory.incompleteLog,
-        severity: DiagnosticIssueSeverity.warning,
-        title: '没有记录到刷新结束事件',
-        explanation: origin == 'background'
-            ? '该后台任务没有记录到结束事件，可能被系统终止，或日志尚未在 isolate 退出前写入完成。'
-            : '该刷新没有记录到结束事件，可能尚未完成、被终止，或日志写入不完整。',
-        details: _details(refreshId, entry),
-      ));
+      issues.add(
+        DiagnosticIssue(
+          id: '$refreshId-incomplete',
+          category: DiagnosticIssueCategory.incompleteLog,
+          severity: DiagnosticIssueSeverity.warning,
+          title: '没有记录到刷新结束事件',
+          explanation: origin == 'background'
+              ? '该后台任务没有记录到结束事件，可能被系统终止，或日志尚未在 isolate 退出前写入完成。'
+              : '该刷新没有记录到结束事件，可能尚未完成、被终止，或日志写入不完整。',
+          details: _details(refreshId, entry),
+        ),
+      );
     }
 
     DiagnosticReportSeverity severity;
@@ -440,14 +453,18 @@ class DiagnosticReportParser {
       severity = DiagnosticReportSeverity.failed;
     } else if (startEntries.isNotEmpty && finishEntries.isEmpty) {
       severity = DiagnosticReportSeverity.incomplete;
-    } else if (modules
-            .any((module) => module.state == DiagnosticModuleState.failed) ||
-        issues.any((issue) =>
-            issue.category == DiagnosticIssueCategory.coordination &&
-            issue.severity == DiagnosticIssueSeverity.error)) {
+    } else if (modules.any(
+          (module) => module.state == DiagnosticModuleState.failed,
+        ) ||
+        issues.any(
+          (issue) =>
+              issue.category == DiagnosticIssueCategory.coordination &&
+              issue.severity == DiagnosticIssueSeverity.error,
+        )) {
       severity = DiagnosticReportSeverity.failed;
-    } else if (modules
-        .any((module) => module.state == DiagnosticModuleState.cache)) {
+    } else if (modules.any(
+      (module) => module.state == DiagnosticModuleState.cache,
+    )) {
       severity = DiagnosticReportSeverity.degraded;
     } else if (disposition != DiagnosticRefreshDisposition.executed) {
       severity = DiagnosticReportSeverity.coordinated;
@@ -469,7 +486,8 @@ class DiagnosticReportParser {
       issues: issues,
       relogged: entries.any((entry) => entry.relogged),
       retried: entries.any((entry) => entry.retried),
-      cacheUsed: entries.any((entry) => entry.cacheUsed) ||
+      cacheUsed:
+          entries.any((entry) => entry.cacheUsed) ||
           modules.any((module) => module.state == DiagnosticModuleState.cache),
     );
   }
@@ -482,21 +500,28 @@ class DiagnosticReportParser {
     final seen = <String>{};
     final finishEntries = entries
         .where(
-            (entry) => entry.module == 'refresh' && entry.operation == 'finish')
+          (entry) => entry.module == 'refresh' && entry.operation == 'finish',
+        )
         .toList();
     final lastFinish = finishEntries.lastOrNull;
     final topLevelFailed = finishEntries.any(_isTopLevelFailureEntry);
-    void add(DiagnosticLogEntry entry, String type, String title,
-        [String? description]) {
+    void add(
+      DiagnosticLogEntry entry,
+      String type,
+      String title, [
+      String? description,
+    ]) {
       final key = '$type-${entry.module}-${entry.operation}';
       if (!seen.add(key)) return;
-      events.add(DiagnosticTimelineEvent(
-        id: '${refreshId ?? 'global'}-${entry.timestampUtc.microsecondsSinceEpoch}-$type',
-        refreshId: refreshId,
-        timestampUtc: entry.timestampUtc,
-        title: title,
-        description: description,
-      ));
+      events.add(
+        DiagnosticTimelineEvent(
+          id: '${refreshId ?? 'global'}-${entry.timestampUtc.microsecondsSinceEpoch}-$type',
+          refreshId: refreshId,
+          timestampUtc: entry.timestampUtc,
+          title: title,
+          description: description,
+        ),
+      );
     }
 
     for (final entry in entries) {
@@ -505,12 +530,13 @@ class DiagnosticReportParser {
       } else if (entry.module == 'refresh' && entry.operation == 'finish') {
         if (!identical(entry, lastFinish)) continue;
         add(
-            entry,
-            'finish',
-            topLevelFailed ? '刷新异常结束' : '刷新结束',
-            entry.durationMs == null
-                ? null
-                : '总耗时 ${formatDuration(entry.durationMs)}');
+          entry,
+          'finish',
+          topLevelFailed ? '刷新异常结束' : '刷新结束',
+          entry.durationMs == null
+              ? null
+              : '总耗时 ${formatDuration(entry.durationMs)}',
+        );
       } else {
         switch (entry.operation) {
           case 'foregroundActive':
@@ -542,8 +568,11 @@ class DiagnosticReportParser {
             add(entry, 'lockReleased', '已释放同账号刷新锁');
           case 'readCache':
           case 'readCacheItem':
-            add(entry, 'cache-${_canonicalModule(entry.module, entry.message)}',
-                '${_canonicalModule(entry.module, entry.message) ?? entry.module}使用缓存');
+            add(
+              entry,
+              'cache-${_canonicalModule(entry.module, entry.message)}',
+              '${_canonicalModule(entry.module, entry.message) ?? entry.module}使用缓存',
+            );
         }
       }
       if (entry.relogged) {
@@ -575,14 +604,16 @@ class DiagnosticReportParser {
       String explanation,
     ) {
       if (!seen.add(key)) return;
-      issues.add(DiagnosticIssue(
-        id: '$refreshId-$key',
-        category: category,
-        severity: severity,
-        title: title,
-        explanation: explanation,
-        details: _details(refreshId, entry),
-      ));
+      issues.add(
+        DiagnosticIssue(
+          id: '$refreshId-$key',
+          category: category,
+          severity: severity,
+          title: title,
+          explanation: explanation,
+          details: _details(refreshId, entry),
+        ),
+      );
     }
 
     if (topLevelFailureEntry != null) {
@@ -710,11 +741,13 @@ class DiagnosticReportParser {
         ownText.contains('回退')) {
       return true;
     }
-    return entries.any((other) =>
-        other.operation == 'futureProbe' &&
-        _canonicalModule(other.module, other.message) == '校历' &&
-        other.timestampUtc.difference(entry.timestampUtc).abs() <
-            const Duration(seconds: 5));
+    return entries.any(
+      (other) =>
+          other.operation == 'futureProbe' &&
+          _canonicalModule(other.module, other.message) == '校历' &&
+          other.timestampUtc.difference(entry.timestampUtc).abs() <
+              const Duration(seconds: 5),
+    );
   }
 
   static String? _canonicalModule(String module, String message) {
@@ -781,11 +814,13 @@ class _ModuleBuilder {
     relogged |= entry.relogged;
     retried |= entry.retried;
     if (entry.statusCode != null) statuses.add(entry.statusCode!);
-    appParsingError |= entry.exceptionType.contains('TypeError') ||
+    appParsingError |=
+        entry.exceptionType.contains('TypeError') ||
         entry.exception.contains('Null check operator used on a null value') ||
         entry.stack.contains('Null check operator used on a null value');
     final text = '${entry.message} ${entry.exception}';
-    final isCache = entry.cacheUsed ||
+    final isCache =
+        entry.cacheUsed ||
         entry.operation == 'readCache' ||
         entry.operation == 'readCacheItem' ||
         text.contains('使用缓存') ||
@@ -861,10 +896,9 @@ class _ModuleBuilder {
   }
 
   String _reason(DiagnosticModuleState state) {
-    final sessionStatuses = statuses
-        .where((status) => status == 901 || status == 922)
-        .toList()
-      ..sort();
+    final sessionStatuses =
+        statuses.where((status) => status == 901 || status == 922).toList()
+          ..sort();
     switch (state) {
       case DiagnosticModuleState.liveSuccess:
         if (relogged && retried) return '重新登录并重试后，已实时获取成功。';
@@ -875,8 +909,8 @@ class _ModuleBuilder {
         final cacheText = cacheUpdatedAtUtc != null
             ? formatLocalDiagnosticTime(cacheUpdatedAtUtc!)
             : cacheUpdatedText == null
-                ? '已有'
-                : sanitizeDiagnosticText(cacheUpdatedText!);
+            ? '已有'
+            : sanitizeDiagnosticText(cacheUpdatedText!);
         if (sessionStatuses.isNotEmpty) {
           return '教务网会话可能已失效或请求被服务端拒绝，实时请求返回 '
               '${sessionStatuses.join('/')}，本次保留了 $cacheText 的缓存数据。';
@@ -1035,7 +1069,8 @@ String formatDiagnosticExport({
     ..writeln('平台：${sanitizeDiagnosticText(platform)}')
     ..writeln('refreshId：${latest?.refreshId ?? '-'}')
     ..writeln(
-        '来源：${latest == null ? '-' : diagnosticOriginLabel(latest.origin)}')
+      '来源：${latest == null ? '-' : diagnosticOriginLabel(latest.origin)}',
+    )
     ..writeln()
     ..writeln('=== 1. 易读诊断报告 ===');
 
@@ -1046,8 +1081,9 @@ String formatDiagnosticExport({
       buffer
         ..writeln()
         ..writeln(
-            '${formatLocalDiagnosticTime(report.startedAtUtc, utcOffset: offset)} '
-            '${diagnosticOriginLabel(report.origin)} · ${diagnosticReportTitle(report)}')
+          '${formatLocalDiagnosticTime(report.startedAtUtc, utcOffset: offset)} '
+          '${diagnosticOriginLabel(report.origin)} · ${diagnosticReportTitle(report)}',
+        )
         ..writeln('refreshId：${report.refreshId}')
         ..writeln('总耗时：${formatDuration(report.durationMs)}');
       final description = diagnosticReportDescription(report);
@@ -1055,11 +1091,14 @@ String formatDiagnosticExport({
       if (report.performedModuleRequests) {
         buffer
           ..writeln(
-              '模块：成功 ${report.successCount} / 降级 ${report.degradedCount} / '
-              '失败 ${report.failedCount}')
-          ..writeln('重新登录：${report.relogged ? '是' : '否'}；'
-              '重试：${report.retried ? '是' : '否'}；'
-              '缓存回退：${report.cacheUsed ? '是' : '否'}');
+            '模块：成功 ${report.successCount} / 降级 ${report.degradedCount} / '
+            '失败 ${report.failedCount}',
+          )
+          ..writeln(
+            '重新登录：${report.relogged ? '是' : '否'}；'
+            '重试：${report.retried ? '是' : '否'}；'
+            '缓存回退：${report.cacheUsed ? '是' : '否'}',
+          );
       }
     }
   }
@@ -1072,8 +1111,9 @@ String formatDiagnosticExport({
     } else {
       for (final module in report.modules) {
         buffer.writeln(
-            '${module.name}：${diagnosticModuleStateLabel(module.state)}；'
-            '${formatModuleDuration(module)}；${module.reason}');
+          '${module.name}：${diagnosticModuleStateLabel(module.state)}；'
+          '${formatModuleDuration(module)}；${module.reason}',
+        );
       }
     }
   }
@@ -1086,9 +1126,10 @@ String formatDiagnosticExport({
   if (timeline.isEmpty) buffer.writeln('无关键时间线事件。');
   for (final event in timeline) {
     buffer.writeln(
-        '${formatLocalDiagnosticTime(event.timestampUtc, utcOffset: offset)} '
-        '${event.title}${event.description == null ? '' : '：${event.description}'} '
-        '[refreshId=${event.refreshId ?? '-'}]');
+      '${formatLocalDiagnosticTime(event.timestampUtc, utcOffset: offset)} '
+      '${event.title}${event.description == null ? '' : '：${event.description}'} '
+      '[refreshId=${event.refreshId ?? '-'}]',
+    );
   }
 
   buffer.writeln('\n=== 4. 发现的问题 ===');
@@ -1097,16 +1138,19 @@ String formatDiagnosticExport({
   for (final issue in issues) {
     buffer
       ..writeln(
-          '${diagnosticIssueCategoryLabel(issue.category)}：${issue.title}')
+        '${diagnosticIssueCategoryLabel(issue.category)}：${issue.title}',
+      )
       ..writeln(issue.explanation)
-      ..writeln('  refreshId=${issue.details.refreshId}；'
-          'UTC=${formatUtcDiagnosticTime(issue.details.timestampUtc)}；'
-          'HTTP=${issue.details.statusCode ?? '-'}；'
-          '接口=${issue.details.interfaceName}；'
-          'URL=${issue.details.url ?? '-'}；'
-          '异常=${issue.details.exceptionType ?? '-'}；'
-          '摘要=${issue.details.exceptionSummary ?? '-'}；'
-          '堆栈=${issue.details.stack ?? '-'}');
+      ..writeln(
+        '  refreshId=${issue.details.refreshId}；'
+        'UTC=${formatUtcDiagnosticTime(issue.details.timestampUtc)}；'
+        'HTTP=${issue.details.statusCode ?? '-'}；'
+        '接口=${issue.details.interfaceName}；'
+        'URL=${issue.details.url ?? '-'}；'
+        '异常=${issue.details.exceptionType ?? '-'}；'
+        '摘要=${issue.details.exceptionSummary ?? '-'}；'
+        '堆栈=${issue.details.stack ?? '-'}',
+      );
   }
 
   buffer

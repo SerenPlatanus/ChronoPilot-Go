@@ -43,7 +43,8 @@ DateTime? asDateTime(Object? value) {
   if (text == null || text.isEmpty) return null;
   if (RegExp(r'^\d{8}$').hasMatch(text)) {
     return DateTime.tryParse(
-        '${text.substring(0, 4)}-${text.substring(4, 6)}-${text.substring(6, 8)}');
+      '${text.substring(0, 4)}-${text.substring(4, 6)}-${text.substring(6, 8)}',
+    );
   }
   return DateTime.tryParse(text);
 }

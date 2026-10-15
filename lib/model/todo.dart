@@ -7,17 +7,17 @@ class Todo {
   DateTime? endTime;
 
   Todo.fromJson(Map<String, dynamic> json)
-      : id = asString(json["id"]) ?? '',
-        name = asString(json["title"]) ?? '未命名作业',
-        course = asString(json["course_name"]) ?? '未知课程',
-        endTime = DateTime.tryParse(asString(json["end_time"]) ?? '');
+    : id = asString(json["id"]) ?? '',
+      name = asString(json["title"]) ?? '未命名作业',
+      course = asString(json["course_name"]) ?? '未知课程',
+      endTime = DateTime.tryParse(asString(json["end_time"]) ?? '');
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': name,
-        'course_name': course,
-        'end_time': endTime?.toIso8601String(),
-      };
+    'id': id,
+    'title': name,
+    'course_name': course,
+    'end_time': endTime?.toIso8601String(),
+  };
 
   static List<Todo> getAllFromCourses(Map<String, dynamic> json) {
     final rawTodos = asDynamicList(json["todo_list"]) ?? const [];

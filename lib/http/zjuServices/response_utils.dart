@@ -90,13 +90,15 @@ bool jsonIndicatesAuthenticationFailure(Map<String, dynamic> json) {
     asString(json['msg']),
     asString(json['error']),
   ].whereType<String>().join(' ').toLowerCase();
-  final authenticationMessage = message.contains('token') ||
+  final authenticationMessage =
+      message.contains('token') ||
       message.contains('登录') ||
       message.contains('认证') ||
       message.contains('过期') ||
       message.contains('unauthorized') ||
       message.contains('kickout');
-  final failed = code == HttpStatus.unauthorized ||
+  final failed =
+      code == HttpStatus.unauthorized ||
       code == HttpStatus.forbidden ||
       code == 901 ||
       (authenticationMessage &&
@@ -165,33 +167,18 @@ void validateResponse({
     if (locationIndicatesAuthenticationFailure(location) ||
         bodyIndicatesAuthenticationFailure(target) ||
         bodyIndicatesAuthenticationFailure(body)) {
-      throw LoginExpiredException(
-        '$context：登录态已失效',
-        details: debugDetails,
-      );
+      throw LoginExpiredException('$context：登录态已失效', details: debugDetails);
     }
-    throw ExceptionWithMessage(
-      '$context：接口发生未预期跳转',
-      details: debugDetails,
-    );
+    throw ExceptionWithMessage('$context：接口发生未预期跳转', details: debugDetails);
   }
   if (status < 200 || status >= 300) {
-    throw ExceptionWithMessage(
-      '$context：请求失败',
-      details: debugDetails,
-    );
+    throw ExceptionWithMessage('$context：请求失败', details: debugDetails);
   }
   if (body.trim().isEmpty && !allowEmpty) {
-    throw ExceptionWithMessage(
-      '$context：接口返回空响应',
-      details: debugDetails,
-    );
+    throw ExceptionWithMessage('$context：接口返回空响应', details: debugDetails);
   }
   if (bodyIndicatesAuthenticationFailure(body)) {
-    throw LoginExpiredException(
-      '$context：登录态已失效',
-      details: debugDetails,
-    );
+    throw LoginExpiredException('$context：登录态已失效', details: debugDetails);
   }
   if (expectJson && _looksLikeHtml(body)) {
     throw ExceptionWithMessage(
@@ -204,10 +191,7 @@ void validateResponse({
       !body.trimLeft().startsWith('{') &&
       !body.trimLeft().startsWith('[') &&
       body.trim() != 'null') {
-    throw ExceptionWithMessage(
-      '$context：接口返回格式异常',
-      details: debugDetails,
-    );
+    throw ExceptionWithMessage('$context：接口返回格式异常', details: debugDetails);
   }
 }
 
@@ -241,9 +225,13 @@ Future<String> readResponseBody(
   HttpClientResponse response, {
   required String context,
 }) {
-  return response.transform(utf8.decoder).join().timeout(
-      const Duration(seconds: 8),
-      onTimeout: () => throw requestTimeout('$context：读取响应内容超时'));
+  return response
+      .transform(utf8.decoder)
+      .join()
+      .timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => throw requestTimeout('$context：读取响应内容超时'),
+      );
 }
 
 Object? decodeJsonValue(String body, {required String context}) {

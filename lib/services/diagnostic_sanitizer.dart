@@ -36,17 +36,11 @@ String sanitizeDiagnosticText(String value) {
     ),
     (match) => '${match.group(1)}=<已隐藏>',
   );
-  result = result.replaceAllMapped(
-    RegExp(r'https?://[^\s|]+'),
-    (match) {
-      final uri = Uri.tryParse(match.group(0) ?? '');
-      return uri == null ? '<已隐藏 URL>' : sanitizeDiagnosticUri(uri);
-    },
-  );
-  result = result.replaceAll(
-    RegExp(r'(?<!\d)\d{8,12}(?!\d)'),
-    '<账号已隐藏>',
-  );
+  result = result.replaceAllMapped(RegExp(r'https?://[^\s|]+'), (match) {
+    final uri = Uri.tryParse(match.group(0) ?? '');
+    return uri == null ? '<已隐藏 URL>' : sanitizeDiagnosticUri(uri);
+  });
+  result = result.replaceAll(RegExp(r'(?<!\d)\d{8,12}(?!\d)'), '<账号已隐藏>');
   return result.replaceAll('\r', ' ').replaceAll('\n', r'\n');
 }
 

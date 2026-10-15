@@ -89,10 +89,7 @@ class CalendarConfigUnavailableException extends ExceptionWithMessage {
     required String details,
     super.originalError,
     super.stackTrace,
-  }) : super(
-          '当前学期校历配置暂未发布',
-          details: details,
-        );
+  }) : super('当前学期校历配置暂未发布', details: details);
 }
 
 /// 实时请求失败但已返回缓存；其字符串标记供刷新合并逻辑识别。
@@ -105,10 +102,8 @@ class CachedDataException extends ExceptionWithMessage {
   });
 
   @override
-  String toString() => degradedRefreshText(
-        message.toString(),
-        details: details,
-      );
+  String toString() =>
+      degradedRefreshText(message.toString(), details: details);
 }
 
 Exception requestTimeout([String message = '请求超时']) {
@@ -117,8 +112,10 @@ Exception requestTimeout([String message = '请求超时']) {
 
 String shortErrorText(Object? error) {
   // UI 只展示标记前的短消息，完整详情仍保留给诊断日志。
-  final text =
-      (error?.toString() ?? '未知错误').replaceFirst(refreshDegradedMarker, '');
+  final text = (error?.toString() ?? '未知错误').replaceFirst(
+    refreshDegradedMarker,
+    '',
+  );
   return text.split(refreshErrorDetailMarker).first.trim();
 }
 
@@ -158,13 +155,10 @@ String redactSensitive(String value) {
     ),
     (match) => '${match.group(1)}=<已隐藏>',
   );
-  result = result.replaceAllMapped(
-    RegExp(r'https?://[^\s]+'),
-    (match) {
-      final uri = Uri.tryParse(match.group(0) ?? '');
-      return uri == null ? '<已隐藏 URL>' : sanitizedRequestUri(uri);
-    },
-  );
+  result = result.replaceAllMapped(RegExp(r'https?://[^\s]+'), (match) {
+    final uri = Uri.tryParse(match.group(0) ?? '');
+    return uri == null ? '<已隐藏 URL>' : sanitizedRequestUri(uri);
+  });
   return result;
 }
 
@@ -189,7 +183,8 @@ Exception exceptionFrom(
   );
   if (kDebugMode && stackTrace != null) {
     debugPrint(
-        '$context：${error.runtimeType}: ${redactSensitive(error.toString())}\n$stackTrace');
+      '$context：${error.runtimeType}: ${redactSensitive(error.toString())}\n$stackTrace',
+    );
   }
   if (error is LoginExpiredException) return error;
   if (error is AuthenticationExpiredException) return error;

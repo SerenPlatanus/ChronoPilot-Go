@@ -7,14 +7,12 @@ import 'diagnostic_log_fixture.dart';
 DiagnosticRefreshReport reportById(
   DiagnosticReportBundle bundle,
   String refreshId,
-) =>
-    bundle.reports.singleWhere((report) => report.refreshId == refreshId);
+) => bundle.reports.singleWhere((report) => report.refreshId == refreshId);
 
 DiagnosticModuleReport moduleByName(
   DiagnosticRefreshReport report,
   String name,
-) =>
-    report.modules.singleWhere((module) => module.name == name);
+) => report.modules.singleWhere((module) => module.name == name);
 
 void main() {
   const parser = DiagnosticReportParser();
@@ -22,10 +20,7 @@ void main() {
   test('UTC 转本地时间并显示 UTC 偏移', () {
     final utc = DateTime.parse('2026-07-16T11:58:04.000Z');
     expect(
-      formatLocalDiagnosticTime(
-        utc,
-        utcOffset: const Duration(hours: 8),
-      ),
+      formatLocalDiagnosticTime(utc, utcOffset: const Duration(hours: 8)),
       '2026-07-16 19:58:04 UTC+08:00',
     );
     expect(formatUtcDiagnosticTime(utc), '2026-07-16T11:58:04.000Z');
@@ -33,8 +28,11 @@ void main() {
 
   test('同一 refreshId 聚合且不同 refreshId 严格隔离', () {
     final bundle = parser.parse(buildLatestDiagnosticFixture());
-    expect(bundle.reports.map((report) => report.refreshId),
-        ['fg-success', 'fg-degraded', 'bg-refresh']);
+    expect(bundle.reports.map((report) => report.refreshId), [
+      'fg-success',
+      'fg-degraded',
+      'bg-refresh',
+    ]);
 
     final degraded = reportById(bundle, 'fg-degraded');
     final success = reportById(bundle, 'fg-success');
@@ -53,8 +51,11 @@ void main() {
       isFalse,
     );
     expect(
-      bundle.reports.expand((report) => report.issues).any(
-          (issue) => issue.category == DiagnosticIssueCategory.coordination),
+      bundle.reports
+          .expand((report) => report.issues)
+          .any(
+            (issue) => issue.category == DiagnosticIssueCategory.coordination,
+          ),
       isFalse,
     );
   });
@@ -116,8 +117,10 @@ void main() {
         operation: 'finish',
       ),
     ].join('\n');
-    expect(parser.parse(failedLog).latestReport!.severity,
-        DiagnosticReportSeverity.failed);
+    expect(
+      parser.parse(failedLog).latestReport!.severity,
+      DiagnosticReportSeverity.failed,
+    );
   });
 
   test('顶层异常只记录一个 finish 并保留耗时和堆栈', () async {
@@ -137,14 +140,16 @@ void main() {
     );
 
     final current = service.currentText();
-    final appended =
-        before.isEmpty ? current : current.substring(before.length + 1);
+    final appended = before.isEmpty
+        ? current
+        : current.substring(before.length + 1);
     final ownLines = appended
         .split('\n')
         .where((line) => line.contains('refreshId=$refreshId'))
         .toList();
-    final finishes =
-        ownLines.where((line) => line.contains('operation=finish')).toList();
+    final finishes = ownLines
+        .where((line) => line.contains('operation=finish'))
+        .toList();
     expect(finishes, hasLength(1));
     expect(finishes.single, contains('level=error'));
     expect(finishes.single, contains('durationMs='));
@@ -203,8 +208,10 @@ void main() {
     final report = parser.parse(raw).latestReport!;
     expect(report.severity, DiagnosticReportSeverity.failed);
     expect(report.durationMs, 73);
-    expect(report.timeline.where((event) => event.title == '刷新异常结束'),
-        hasLength(1));
+    expect(
+      report.timeline.where((event) => event.title == '刷新异常结束'),
+      hasLength(1),
+    );
     final issue = report.issues.singleWhere(
       (issue) => issue.category == DiagnosticIssueCategory.refreshExecution,
     );
@@ -334,10 +341,7 @@ void main() {
       ),
     ].join('\n');
 
-    final shared = reportById(
-      parser.parse(raw),
-      'shared-result-failed',
-    );
+    final shared = reportById(parser.parse(raw), 'shared-result-failed');
     expect(shared.severity, DiagnosticReportSeverity.failed);
     expect(diagnosticReportTitle(shared), '共享任务失败');
     expect(shared.modules, isEmpty);
@@ -353,10 +357,14 @@ void main() {
         .where((issue) => issue.category == DiagnosticIssueCategory.session)
         .toList();
     expect(sessionIssues, hasLength(2));
-    expect(sessionIssues.map((issue) => issue.explanation).join(),
-        contains('可能失效或请求被服务端拒绝'));
-    expect(sessionIssues.map((issue) => issue.explanation).join(),
-        isNot(contains('一定')));
+    expect(
+      sessionIssues.map((issue) => issue.explanation).join(),
+      contains('可能失效或请求被服务端拒绝'),
+    );
+    expect(
+      sessionIssues.map((issue) => issue.explanation).join(),
+      isNot(contains('一定')),
+    );
     expect(moduleByName(report, '考试').state, DiagnosticModuleState.liveSuccess);
     expect(moduleByName(report, '考试').relogged, isTrue);
     expect(moduleByName(report, '成绩').state, DiagnosticModuleState.liveSuccess);
@@ -382,8 +390,10 @@ void main() {
       'fg-degraded',
     );
     final timetable = moduleByName(report, '课表');
-    expect(timetable.cacheUpdatedAtUtc,
-        DateTime.parse('2026-07-16T11:45:00.000Z'));
+    expect(
+      timetable.cacheUpdatedAtUtc,
+      DateTime.parse('2026-07-16T11:45:00.000Z'),
+    );
     expect(timetable.reason, contains('缓存数据'));
   });
 
@@ -454,17 +464,22 @@ void main() {
     for (final report in reports) {
       expect(report.severity, DiagnosticReportSeverity.coordinated);
       expect(
-          report.disposition, DiagnosticRefreshDisposition.backgroundYielded);
+        report.disposition,
+        DiagnosticRefreshDisposition.backgroundYielded,
+      );
       expect(diagnosticReportTitle(report), '后台已主动让行');
       expect(report.modules, isEmpty);
       expect(report.issues, isEmpty);
       expect(
-          report.successCount + report.degradedCount + report.failedCount, 0);
+        report.successCount + report.degradedCount + report.failedCount,
+        0,
+      );
     }
     expect(
-      reportById(parser.parse(raw), 'yield-after-login')
-          .timeline
-          .any((event) => event.title == '后台登录后检测到前台并让行'),
+      reportById(
+        parser.parse(raw),
+        'yield-after-login',
+      ).timeline.any((event) => event.title == '后台登录后检测到前台并让行'),
       isTrue,
     );
   });
@@ -644,15 +659,15 @@ void main() {
     final bundle = parser.parse(buildComprehensiveDiagnosticExportFixture());
     expect(bundle.reports, isNotEmpty);
     expect(
-      bundle.reports.expand((report) => report.issues).any(
-            (issue) => issue.details.stack?.contains(r'\n') ?? false,
-          ),
+      bundle.reports
+          .expand((report) => report.issues)
+          .any((issue) => issue.details.stack?.contains(r'\n') ?? false),
       isTrue,
     );
     expect(
-      bundle.reports.expand((report) => report.issues).where(
-            (issue) => issue.category == DiagnosticIssueCategory.session,
-          ),
+      bundle.reports
+          .expand((report) => report.issues)
+          .where((issue) => issue.category == DiagnosticIssueCategory.session),
       hasLength(2),
     );
     expect(reportById(bundle, 'shared-caller').relatedRefreshId, 'fg-success');
@@ -671,8 +686,10 @@ void main() {
     );
     expect(export, contains('本地导出时间：2026-07-16 20:10:00 UTC+08:00'));
     expect(export, contains('UTC 导出时间：2026-07-16T12:10:00.000Z'));
-    expect(export.indexOf('=== 1. 易读诊断报告 ==='),
-        lessThan(export.indexOf('=== 5. 完整原始日志（UTC） ===')));
+    expect(
+      export.indexOf('=== 1. 易读诊断报告 ==='),
+      lessThan(export.indexOf('=== 5. 完整原始日志（UTC） ===')),
+    );
     expect(export, endsWith(raw));
   });
 }

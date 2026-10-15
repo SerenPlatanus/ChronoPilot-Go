@@ -1,115 +1,28 @@
-name: Build Android APK
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [ main, master ]
-
+name: Build Android development APK
+on: [workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      ANDROID_SIGNING_SHA256: 20ebb2a729fb56f041f49b95cabb63d6cfa85e85890c1037f13c1bad2483367c
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.38.1'
-          channel: 'stable'
+          channel: stable
           cache: true
-
-      - name: Get dependencies
-        run: flutter pub get
-
-      - name: Read app version
-        run: |
-          APP_FULL_VERSION=$(grep '^version: ' pubspec.yaml | awk '{print $2}')
-          APP_VERSION=${APP_FULL_VERSION%%+*}
-          APP_BUILD_NUMBER=${APP_FULL_VERSION#*+}
-          if [ "$APP_BUILD_NUMBER" = "$APP_FULL_VERSION" ]; then
-            APP_BUILD_NUMBER=1
-          fi
-
-          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
-          echo "APP_BUILD_NUMBER=$APP_BUILD_NUMBER" >> "$GITHUB_ENV"
-          echo "Current version is: $APP_VERSION+$APP_BUILD_NUMBER"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-
-      - name: Restore signing keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::Set the ANDROID_KEYSTORE_BASE64 repository secret to the base64-encoded existing signing keystore."
-            exit 1
-          fi
-          mkdir -p "$HOME/.android"
-          umask 077
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
-          # AGP otherwise prefers the runner's XDG_CONFIG_HOME over HOME.
-          echo "ANDROID_USER_HOME=$HOME/.android" >> "$GITHUB_ENV"
-          certificate_sha256=$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sha256sum | cut -d ' ' -f 1)
-          if [ "$certificate_sha256" != "$ANDROID_SIGNING_SHA256" ]; then
-            echo "::error::The signing secret does not match the existing Celechron signing certificate."
-            exit 1
-          fi
-
-      - name: Generate Gradle wrapper
-        run: gradle --no-daemon -p android wrapper --gradle-version 8.13
-
-      - name: Generate launcher icons
-        run: dart run flutter_launcher_icons
-
-      - name: Build APK
-        run: >
-          flutter build apk
-          --release
-          --split-per-abi
-          --build-name "${{ env.APP_VERSION }}"
-          --build-number "${{ env.APP_BUILD_NUMBER }}"
-
-      - name: Verify APK signing certificates
-        shell: bash
-        run: |
-          apksigner=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n 1)
-          if [ -z "$apksigner" ]; then
-            echo "::error::Android SDK apksigner was not found."
-            exit 1
-          fi
-          for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
-            certificate_info=$("$apksigner" verify --print-certs "$apk")
-            printf '%s\n' "$certificate_info"
-            certificate_sha256=$(printf '%s\n' "$certificate_info" | sed -nE 's/^(Signer #[0-9]+|V[0-9.]+ Signer):? certificate SHA-256 digest: ([[:xdigit:]]{64})[[:space:]]*$/\2/p' | tr '[:upper:]' '[:lower:]' | sort -u)
-            if [ "$certificate_sha256" != "$ANDROID_SIGNING_SHA256" ]; then
-              echo "::error::$apk does not match the existing Celechron signing certificate."
-              exit 1
-            fi
-          done
-
-      - name: Rename APKs
-        run: |
-          for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
-            abi=$(basename "$apk" | sed -E 's/app-(.*)-release\.apk/\1/')
-            mv "$apk" "build/app/outputs/flutter-apk/celechron-v${APP_VERSION}-${abi}.apk"
-          done
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      - run: flutter pub get
+      - run: gradle --no-daemon -p android wrapper --gradle-version 8.13
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+      - run: flutter build apk --debug
+      - uses: actions/upload-artifact@v4
         with:
-          name: celechron-v${{ env.APP_VERSION }}-apk
-          path: build/app/outputs/flutter-apk/celechron-v${{ env.APP_VERSION }}-*.apk
+          name: zju-planner-development-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk

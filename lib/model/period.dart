@@ -109,10 +109,11 @@ int comparePeriod(Period a, Period b) {
 
 DateTime formatToDateTime(String val) {
   return DateTime(
-      int.parse(val.substring(0, 4)),
-      int.parse(val.substring(4, 6)),
-      int.parse(val.substring(6, 8)),
-      int.parse(val.substring(9, 11)),
-      int.parse(val.substring(11, 13)),
-      int.parse(val.substring(13, 15)));
+    int.parse(val.substring(0, 4)),
+    int.parse(val.substring(4, 6)),
+    int.parse(val.substring(6, 8)),
+    int.parse(val.substring(9, 11)),
+    int.parse(val.substring(11, 13)),
+    int.parse(val.substring(13, 15)),
+  );
 }

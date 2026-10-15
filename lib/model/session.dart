@@ -37,10 +37,10 @@ class Session {
   static const String dayMap = '零一二三四五六日';
 
   Session.empty()
-      : confirmed = true,
-        oddWeek = false,
-        evenWeek = false,
-        dayOfWeek = 1;
+    : confirmed = true,
+      oddWeek = false,
+      evenWeek = false,
+      dayOfWeek = 1;
 
   /*Session.fromAppService(Map<String, dynamic> json)
       : id = RegExp(r'(.*?-){5}\d+(?=.*\d{10})')
@@ -75,8 +75,9 @@ class Session {
     //名称、教师、地点
     final courseBlock = asString(json['kcb']);
     if (courseBlock != null) {
-      var nameTeacherPosition = RegExp(r'(.*?)<br>(.*?)<br>(.*?)<br>(.*?)zwf')
-          .firstMatch(courseBlock);
+      var nameTeacherPosition = RegExp(
+        r'(.*?)<br>(.*?)<br>(.*?)<br>(.*?)zwf',
+      ).firstMatch(courseBlock);
       if (nameTeacherPosition != null) {
         // ZDBK上，课程名称中的括号有时会变成英文括号，此处统一改成中文括号
         session.name = nameTeacherPosition
@@ -108,54 +109,57 @@ class Session {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'teacher': teacher,
-        'teacherId': teacherId,
-        'confirmed': confirmed,
-        'firstHalf': firstHalf,
-        'secondHalf': secondHalf,
-        'oddWeek': oddWeek,
-        'evenWeek': evenWeek,
-        'day': dayOfWeek,
-        'time': time,
-        'location': location,
-        'customRepeat': customRepeat,
-        'customRepeatWeeks': customRepeatWeeks,
-        'credit': credit,
-        'online': online,
-        'type': type,
-      };
+    'id': id,
+    'name': name,
+    'teacher': teacher,
+    'teacherId': teacherId,
+    'confirmed': confirmed,
+    'firstHalf': firstHalf,
+    'secondHalf': secondHalf,
+    'oddWeek': oddWeek,
+    'evenWeek': evenWeek,
+    'day': dayOfWeek,
+    'time': time,
+    'location': location,
+    'customRepeat': customRepeat,
+    'customRepeatWeeks': customRepeatWeeks,
+    'credit': credit,
+    'online': online,
+    'type': type,
+  };
 
   Session.fromJson(Map<String, dynamic> json)
-      : id = asString(json['id']),
-        name = asString(json['name']) ?? '未知课程',
-        teacher = asString(json['teacher']) ?? '未知教师',
-        teacherId = asString(json['teacherId']),
-        confirmed = asBool(json['confirmed']) ?? true,
-        firstHalf = asBool(json['firstHalf']) ?? false,
-        secondHalf = asBool(json['secondHalf']) ?? false,
-        oddWeek = asBool(json['oddWeek']) ?? true,
-        evenWeek = asBool(json['evenWeek']) ?? true,
-        dayOfWeek = asInt(json['day']) ?? 1,
-        time = (asDynamicList(json['time']) ?? const [])
-            .map(asInt)
-            .whereType<int>()
-            .toList(),
-        location = asString(json['location']),
-        customRepeat = asBool(json['customRepeat']) ?? false,
-        customRepeatWeeks =
-            (asDynamicList(json['customRepeatWeeks']) ?? const [])
-                .map(asInt)
-                .whereType<int>()
-                .toList(),
-        credit = asDouble(json['credit']),
-        online = asBool(json['online']),
-        type = asString(json['type']);
+    : id = asString(json['id']),
+      name = asString(json['name']) ?? '未知课程',
+      teacher = asString(json['teacher']) ?? '未知教师',
+      teacherId = asString(json['teacherId']),
+      confirmed = asBool(json['confirmed']) ?? true,
+      firstHalf = asBool(json['firstHalf']) ?? false,
+      secondHalf = asBool(json['secondHalf']) ?? false,
+      oddWeek = asBool(json['oddWeek']) ?? true,
+      evenWeek = asBool(json['evenWeek']) ?? true,
+      dayOfWeek = asInt(json['day']) ?? 1,
+      time = (asDynamicList(json['time']) ?? const [])
+          .map(asInt)
+          .whereType<int>()
+          .toList(),
+      location = asString(json['location']),
+      customRepeat = asBool(json['customRepeat']) ?? false,
+      customRepeatWeeks = (asDynamicList(json['customRepeatWeeks']) ?? const [])
+          .map(asInt)
+          .whereType<int>()
+          .toList(),
+      credit = asDouble(json['credit']),
+      online = asBool(json['online']),
+      type = asString(json['type']);
 
   String get chineseTime {
     var timeString =
-        '${(oddWeek & evenWeek) ? '' : oddWeek ? '单 - ' : '双 - '}周${dayMap[dayOfWeek]}第';
+        '${(oddWeek & evenWeek)
+            ? ''
+            : oddWeek
+            ? '单 - '
+            : '双 - '}周${dayMap[dayOfWeek]}第';
     for (var i = 0; i < time.length; i++) {
       timeString += time[i].toString();
       if (i != time.length - 1) {

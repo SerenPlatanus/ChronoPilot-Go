@@ -18,8 +18,10 @@ String durationToString(Duration duration) {
 }
 
 String toStringHumanReadable(DateTime dateTime) {
-  String str =
-      dateTime.toLocal().toIso8601String().replaceFirst(RegExp(r'T'), ' ');
+  String str = dateTime.toLocal().toIso8601String().replaceFirst(
+    RegExp(r'T'),
+    ' ',
+  );
   str = str.substring(0, str.length - 7);
   return str;
 }
@@ -28,8 +30,10 @@ const secureStorageIOSOptions = kDebugMode
     ? IOSOptions(
         accessibility: KeychainAccessibility.first_unlock,
         accountName: 'Celechron',
-        groupId: 'group.top.celechron.celechron.debug')
+        groupId: 'group.top.celechron.celechron.debug',
+      )
     : IOSOptions(
         accessibility: KeychainAccessibility.first_unlock,
         accountName: 'Celechron',
-        groupId: 'group.top.celechron.celechron');
+        groupId: 'group.top.celechron.celechron',
+      );

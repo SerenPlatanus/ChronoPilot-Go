@@ -36,7 +36,13 @@ class Tuple6<T1, T2, T3, T4, T5, T6> {
   T5 item5;
   T6 item6;
   Tuple6(
-      this.item1, this.item2, this.item3, this.item4, this.item5, this.item6);
+    this.item1,
+    this.item2,
+    this.item3,
+    this.item4,
+    this.item5,
+    this.item6,
+  );
 }
 
 class Tuple7<T1, T2, T3, T4, T5, T6, T7> {
@@ -47,8 +53,15 @@ class Tuple7<T1, T2, T3, T4, T5, T6, T7> {
   T5 item5;
   T6 item6;
   T7 item7;
-  Tuple7(this.item1, this.item2, this.item3, this.item4, this.item5, this.item6,
-      this.item7);
+  Tuple7(
+    this.item1,
+    this.item2,
+    this.item3,
+    this.item4,
+    this.item5,
+    this.item6,
+    this.item7,
+  );
 }
 
 class Tuple8<T1, T2, T3, T4, T5, T6, T7, T8> {
@@ -60,6 +73,14 @@ class Tuple8<T1, T2, T3, T4, T5, T6, T7, T8> {
   T6 item6;
   T7 item7;
   T8 item8;
-  Tuple8(this.item1, this.item2, this.item3, this.item4, this.item5, this.item6,
-      this.item7, this.item8);
+  Tuple8(
+    this.item1,
+    this.item2,
+    this.item3,
+    this.item4,
+    this.item5,
+    this.item6,
+    this.item7,
+    this.item8,
+  );
 }

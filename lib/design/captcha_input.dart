@@ -40,9 +40,13 @@ class ImageCodePortal {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text("安全验证",
-                        style: TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.bold)),
+                    const Text(
+                      "安全验证",
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 20),
 
                     // 图片展示与刷新
@@ -64,10 +68,13 @@ class ImageCodePortal {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text("点击图片刷新",
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: CupertinoColors.secondaryLabel)),
+                    const Text(
+                      "点击图片刷新",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: CupertinoColors.secondaryLabel,
+                      ),
+                    ),
 
                     const SizedBox(height: 20),
 
@@ -77,7 +84,9 @@ class ImageCodePortal {
                       placeholder: "请输入验证码",
                       autofocus: true,
                       padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 10),
+                        vertical: 12,
+                        horizontal: 10,
+                      ),
                       textAlign: TextAlign.center,
                       decoration: BoxDecoration(
                         color: CupertinoColors.quaternarySystemFill,

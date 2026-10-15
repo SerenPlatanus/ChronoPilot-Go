@@ -12,11 +12,7 @@ class Exam {
   String? location;
   String? seat;
 
-  Exam.empty()
-      : id = "",
-        name = "",
-        type = ExamType.finalExam,
-        time = [];
+  Exam.empty() : id = "", name = "", type = ExamType.finalExam, time = [];
 
   /*Exam._fromAppService(
       this.id, this.name, Map<String, dynamic> json, this.type) {
@@ -66,7 +62,10 @@ class Exam {
   }
 
   static List<Exam> parseExamsFromZdbk(
-      Map<String, dynamic> json, String id, String name) {
+    Map<String, dynamic> json,
+    String id,
+    String name,
+  ) {
     var exams = <Exam>[];
     if (asString(json["qzkssj"])?.isNotEmpty == true) {
       try {
@@ -82,28 +81,28 @@ class Exam {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'type': type.index,
-        'time': time.map((e) => e.toIso8601String()).toList(),
-        'dateLabel': dateLabel,
-        'location': location,
-        'seat': seat,
-      };
+    'id': id,
+    'name': name,
+    'type': type.index,
+    'time': time.map((e) => e.toIso8601String()).toList(),
+    'dateLabel': dateLabel,
+    'location': location,
+    'seat': seat,
+  };
 
   Exam.fromJson(Map<String, dynamic> json)
-      : id = asString(json['id']) ?? '',
-        name = asString(json['name']) ?? '未知课程',
-        type = _examTypeFromJson(json['type']),
-        time = (asDynamicList(json['time']) ?? const [])
-            .map(asString)
-            .whereType<String>()
-            .map(DateTime.tryParse)
-            .whereType<DateTime>()
-            .toList(),
-        dateLabel = asString(json['dateLabel']),
-        location = asString(json['location']),
-        seat = asString(json['seat']);
+    : id = asString(json['id']) ?? '',
+      name = asString(json['name']) ?? '未知课程',
+      type = _examTypeFromJson(json['type']),
+      time = (asDynamicList(json['time']) ?? const [])
+          .map(asString)
+          .whereType<String>()
+          .map(DateTime.tryParse)
+          .whereType<DateTime>()
+          .toList(),
+      dateLabel = asString(json['dateLabel']),
+      location = asString(json['location']),
+      seat = asString(json['seat']);
 
   get chineseTime {
     if (dateLabel == null) return TimeHelper.chineseTime(time[0], time[1]);

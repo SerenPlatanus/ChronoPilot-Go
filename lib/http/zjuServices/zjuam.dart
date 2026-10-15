@@ -44,7 +44,10 @@ class ZjuAm {
   static final Uri graduateServiceUri = Uri.parse('https://yjsy.zju.edu.cn/');
 
   static Future<Cookie?> getSsoCookie(
-      HttpClient httpClient, String username, String password) async {
+    HttpClient httpClient,
+    String username,
+    String password,
+  ) async {
     final key = _SsoLoginKey(httpClient, username);
     final active = _activeSsoCookie(key);
     if (active != null) {
@@ -84,7 +87,10 @@ class ZjuAm {
   }
 
   static Future<Cookie?> _createFreshSsoCookie(
-      HttpClient httpClient, String username, String password) async {
+    HttpClient httpClient,
+    String username,
+    String password,
+  ) async {
     // 先删除 1.2 时期留下的值，防止降级后的旧版本再读取。
     await _deleteLegacyCachedSsoCookie(username);
     return _getSsoCookie(httpClient, username, password);
@@ -116,7 +122,9 @@ class ZjuAm {
     final uri = buildServiceLoginUri(service);
     final startedAt = DateTime.now();
     try {
-      final request = await httpClient.getUrl(uri).timeout(
+      final request = await httpClient
+          .getUrl(uri)
+          .timeout(
             const Duration(seconds: 8),
             onTimeout: () => throw requestTimeout('CAS service 请求超时'),
           );
@@ -125,14 +133,16 @@ class ZjuAm {
         Cookie(iPlanetDirectoryPro.name, iPlanetDirectoryPro.value),
       );
       final response = await request.close().timeout(
-            const Duration(seconds: 8),
-            onTimeout: () => throw requestTimeout('CAS service 响应超时'),
-          );
+        const Duration(seconds: 8),
+        onTimeout: () => throw requestTimeout('CAS service 响应超时'),
+      );
       final location = response.headers.value(HttpHeaders.locationHeader);
       final statusCode = response.statusCode;
       final contentType = response.headers.value(HttpHeaders.contentTypeHeader);
-      final body =
-          await readResponseBody(response, context: '$context CAS service');
+      final body = await readResponseBody(
+        response,
+        context: '$context CAS service',
+      );
       DiagnosticLogService.instance.record(
         module: context,
         operation: 'casService',
@@ -146,7 +156,8 @@ class ZjuAm {
       if (!isHttpRedirectStatus(statusCode) ||
           location == null ||
           location.isEmpty) {
-        final details = 'HTTP $statusCode\n'
+        final details =
+            'HTTP $statusCode\n'
             'Content-Type：${contentType ?? '<缺失>'}\n'
             '响应摘要：${responseSummary(body)}';
         // CAS returns its HTTP 200 login page (or an explicit auth status)
@@ -182,10 +193,10 @@ class ZjuAm {
 
   @visibleForTesting
   static Uri buildServiceLoginUri(Uri service) => Uri.https(
-        'zjuam.zju.edu.cn',
-        '/cas/login',
-        {'service': service.toString()},
-      );
+    'zjuam.zju.edu.cn',
+    '/cas/login',
+    {'service': service.toString()},
+  );
 
   static bool _isValidServiceCallback(Uri callback, Uri service) {
     final ticket = callback.queryParameters['ticket'];
@@ -198,7 +209,10 @@ class ZjuAm {
   }
 
   static Future<Cookie?> _getSsoCookie(
-      HttpClient httpClient, String username, String password) async {
+    HttpClient httpClient,
+    String username,
+    String password,
+  ) async {
     late HttpClientRequest request;
     late HttpClientResponse response;
 
@@ -206,37 +220,49 @@ class ZjuAm {
       // execution 与初始 Cookie 属于同一次 CAS 表单会话，必须先取登录页。
       request = await httpClient
           .getUrl(Uri.parse('https://zjuam.zju.edu.cn/cas/login'))
-          .timeout(const Duration(seconds: 8),
-              onTimeout: () => throw requestTimeout());
+          .timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => throw requestTimeout(),
+          );
       request.followRedirects = false;
-      response = await request.close().timeout(const Duration(seconds: 8),
-          onTimeout: () => throw requestTimeout());
+      response = await request.close().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => throw requestTimeout(),
+      );
 
       var cookies = List<Cookie>.from(response.cookies);
       var body = await readResponseBody(response, context: '统一身份认证登录页');
       final loginLocation = response.headers.value(HttpHeaders.locationHeader);
       if (response.statusCode != HttpStatus.ok) {
-        throw LoginException('统一身份认证登录页请求失败；HTTP ${response.statusCode}'
-            '${loginLocation == null ? '' : '；Location $loginLocation'}'
-            '；响应摘要：${responseSummary(body)}');
+        throw LoginException(
+          '统一身份认证登录页请求失败；HTTP ${response.statusCode}'
+          '${loginLocation == null ? '' : '；Location $loginLocation'}'
+          '；响应摘要：${responseSummary(body)}',
+        );
       }
-      var execution =
-          RegExp(r'name="execution" value="(.*?)"').firstMatch(body)?.group(1);
+      var execution = RegExp(
+        r'name="execution" value="(.*?)"',
+      ).firstMatch(body)?.group(1);
       if (execution == null) {
         throw LoginException(
-            '统一身份认证登录页无法获取 execution；HTTP ${response.statusCode}'
-            '；响应摘要：${responseSummary(body)}');
+          '统一身份认证登录页无法获取 execution；HTTP ${response.statusCode}'
+          '；响应摘要：${responseSummary(body)}',
+        );
       }
 
       // 公钥请求沿用登录页 Cookie，随后才可加密密码并提交 execution。
       request = await httpClient
           .getUrl(Uri.parse('https://zjuam.zju.edu.cn/cas/v2/getPubKey'))
-          .timeout(const Duration(seconds: 8),
-              onTimeout: () => throw requestTimeout());
+          .timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => throw requestTimeout(),
+          );
       request.followRedirects = false;
       request.cookies.addAll(cookies);
-      response = await request.close().timeout(const Duration(seconds: 8),
-          onTimeout: () => throw requestTimeout());
+      response = await request.close().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => throw requestTimeout(),
+      );
 
       cookies.addAll(response.cookies);
       body = await readResponseText(
@@ -245,8 +271,10 @@ class ZjuAm {
         expectJson: true,
         requestUri: Uri.parse('https://zjuam.zju.edu.cn/cas/v2/getPubKey'),
       );
-      final publicKey = decodeJsonMap(body,
-          context: '统一身份认证 RSA 公钥；HTTP ${response.statusCode}');
+      final publicKey = decodeJsonMap(
+        body,
+        context: '统一身份认证 RSA 公钥；HTTP ${response.statusCode}',
+      );
       var modulusStr = asString(publicKey['modulus']);
       var exponentStr = asString(publicKey['exponent']);
       if (modulusStr == null || exponentStr == null) {
@@ -258,8 +286,9 @@ class ZjuAm {
         var modInt = BigInt.parse(modulusStr, radix: 16);
         var expInt = BigInt.parse(exponentStr, radix: 16);
         var pwdInt = BigInt.parse(
-            utf8.encode(password).map((e) => e.toRadixString(16)).join(),
-            radix: 16);
+          utf8.encode(password).map((e) => e.toRadixString(16)).join(),
+          radix: 16,
+        );
         var pwdEncInt = pwdInt.modPow(expInt, modInt);
         pwdEnc = pwdEncInt.toRadixString(16).padLeft(128, '0');
       } on Object catch (error, stackTrace) {
@@ -271,30 +300,45 @@ class ZjuAm {
 
       request = await httpClient
           .postUrl(Uri.parse('https://zjuam.zju.edu.cn/cas/login'))
-          .timeout(const Duration(seconds: 8),
-              onTimeout: () => throw requestTimeout());
+          .timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => throw requestTimeout(),
+          );
       request.followRedirects = false;
-      request.headers.contentType =
-          ContentType('application', 'x-www-form-urlencoded', charset: 'utf-8');
+      request.headers.contentType = ContentType(
+        'application',
+        'x-www-form-urlencoded',
+        charset: 'utf-8',
+      );
       request.cookies.addAll(cookies);
-      request.add(utf8.encode(Uri(queryParameters: {
-        'username': username,
-        'password': pwdEnc,
-        'execution': execution,
-        '_eventId': 'submit',
-        'rememberMe': 'true',
-      }).query));
-      response = await request.close().timeout(const Duration(seconds: 8),
-          onTimeout: () => throw requestTimeout());
+      request.add(
+        utf8.encode(
+          Uri(
+            queryParameters: {
+              'username': username,
+              'password': pwdEnc,
+              'execution': execution,
+              '_eventId': 'submit',
+              'rememberMe': 'true',
+            },
+          ).query,
+        ),
+      );
+      response = await request.close().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => throw requestTimeout(),
+      );
       body = await readResponseBody(response, context: '统一身份认证登录提交');
 
       final now = DateTime.now();
       final ssoCookies = response.cookies
-          .where((cookie) =>
-              cookie.name == 'iPlanetDirectoryPro' &&
-              cookie.value.isNotEmpty &&
-              (cookie.maxAge == null || cookie.maxAge! > 0) &&
-              (cookie.expires == null || cookie.expires!.isAfter(now)))
+          .where(
+            (cookie) =>
+                cookie.name == 'iPlanetDirectoryPro' &&
+                cookie.value.isNotEmpty &&
+                (cookie.maxAge == null || cookie.maxAge! > 0) &&
+                (cookie.expires == null || cookie.expires!.isAfter(now)),
+          )
           .toList();
       if (ssoCookies.isNotEmpty) {
         // 取响应中最后一个未过期值，避免前面的删除 Cookie 被误用。
@@ -308,10 +352,12 @@ class ZjuAm {
         return cookie;
       } else {
         final location = response.headers.value(HttpHeaders.locationHeader);
-        throw LoginException("统一身份认证失败，学号或密码错误，或认证会话已失效"
-            "；HTTP ${response.statusCode}"
-            "${location == null ? '' : '；Location $location'}"
-            "；响应摘要：${responseSummary(body)}");
+        throw LoginException(
+          "统一身份认证失败，学号或密码错误，或认证会话已失效"
+          "；HTTP ${response.statusCode}"
+          "${location == null ? '' : '；Location $location'}"
+          "；响应摘要：${responseSummary(body)}",
+        );
       }
     } on Object catch (error, stackTrace) {
       throw exceptionFrom(

@@ -10,11 +10,7 @@ class ExamDto {
   // only used for ugrs
   String get semesterId => id.length > 12 ? id.substring(1, 12) : "研究生请勿使用此函数";
 
-  ExamDto.empty()
-      : id = "",
-        name = "",
-        credit = 0,
-        exams = [];
+  ExamDto.empty() : id = "", name = "", credit = 0, exams = [];
 
   // 第一个元素是开始时间，第二个元素是结束时间
   /*ExamDto(Map<String, dynamic> json)
@@ -41,19 +37,19 @@ class ExamDto {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'credit': credit,
-        'exams': exams,
-      };
+    'id': id,
+    'name': name,
+    'credit': credit,
+    'exams': exams,
+  };
 
   ExamDto.fromJson(Map<String, dynamic> json)
-      : id = asString(json['id']) ?? '',
-        name = asString(json['name']) ?? '未知课程',
-        credit = asDouble(json['credit']) ?? 0.0,
-        exams = (asDynamicList(json['exams']) ?? const [])
-            .map(asStringMap)
-            .whereType<Map<String, dynamic>>()
-            .map(Exam.fromJson)
-            .toList();
+    : id = asString(json['id']) ?? '',
+      name = asString(json['name']) ?? '未知课程',
+      credit = asDouble(json['credit']) ?? 0.0,
+      exams = (asDynamicList(json['exams']) ?? const [])
+          .map(asStringMap)
+          .whereType<Map<String, dynamic>>()
+          .map(Exam.fromJson)
+          .toList();
 }
