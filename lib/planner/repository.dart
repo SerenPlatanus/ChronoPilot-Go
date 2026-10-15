@@ -14,6 +14,7 @@ class PlannerRepository extends ChangeNotifier implements PlannerDataApi {
   Future<void> _tail = Future.value();
   List<Item> _items = [];
   final String scope;
+  bool _closed = false;
   PlannerRepository({
     required this.scope,
     required this.writer,
@@ -76,13 +77,14 @@ class PlannerRepository extends ChangeNotifier implements PlannerDataApi {
   }
 
   Future<void> transaction(void Function(Map<String, dynamic> state) edit) {
+    if (_closed) return Future.error(StateError("数据仓库已关闭"));
     final result = _tail.then((_) async {
       final next = jsonDecode(jsonEncode(_state)) as Map<String, dynamic>;
       edit(next);
       await writer(next);
       _state = next;
       _rebuild();
-      notifyListeners();
+      if (!_closed) notifyListeners();
     });
     _tail = result.catchError((Object _) {});
     return result;
@@ -96,6 +98,25 @@ class PlannerRepository extends ChangeNotifier implements PlannerDataApi {
       final index = list.indexWhere((e) => e['id'] == item.id);
       if (index >= 0 && list[index]['revision'] != item.revision - 1) {
         throw const FormatException('事项已更新，请重新打开编辑');
+      }
+      if (index < 0 && item.revision != 0) {
+        throw const FormatException('事项已删除，请重新创建');
+      }
+      if (index >= 0 && list[index]['origin'] == 'school') {
+        final old = Map<String, dynamic>.from(list[index] as Map);
+        final changed = item.toJson();
+        for (final key in old.keys.where(
+          (k) => ![
+            'notes',
+            'estimatedMinutes',
+            'completed',
+            'revision',
+          ].contains(k),
+        )) {
+          if (old[key] != changed[key]) {
+            throw const FormatException('学校事项的基本信息由学校同步维护');
+          }
+        }
       }
       if (index < 0) {
         list.add(item.toJson());
@@ -151,23 +172,29 @@ class PlannerRepository extends ChangeNotifier implements PlannerDataApi {
     for (final old in previous.keys) {
       if (!incomingIds.contains(old)) {
         _removePendingChildren(list, old as String);
+        if (previous[old]['completed'] == true) list.add(previous[old]);
       }
     }
     for (final item in incoming) {
       final old = previous[item.id];
-      list.add({
+      final merged = <String, dynamic>{
         ...item.toJson(),
         if (old != null) ...{
           'completed': old['completed'],
           'estimatedMinutes': old['estimatedMinutes'],
           'notes': old['notes'],
-          'revision': (old['revision'] as int? ?? 0) + 1,
+          'revision': old['revision'] ?? 0,
         },
-      });
+      };
+      if (old != null && jsonEncode(merged) != jsonEncode(old)) {
+        merged['revision'] = (old['revision'] as int? ?? 0) + 1;
+      }
+      list.add(merged);
     }
   });
   @override
   Future<void> setPreferences(String value) => transaction((s) {
+    if (value.length > 6000) throw const FormatException('偏好最多6000字');
     s['preferences'] = value;
   });
   @override
@@ -185,4 +212,56 @@ class PlannerRepository extends ChangeNotifier implements PlannerDataApi {
   Future<void> deleteSession(String id) => transaction((state) {
     (state['sessions'] as List).removeWhere((e) => e['id'] == id);
   });
+  Future<void> appendMessages(
+    String id,
+    List<Map<String, dynamic>> messages, {
+    String? initialTitle,
+    bool supersedeDrafts = false,
+  }) => transaction((state) {
+    final session = (state['sessions'] as List)
+        .where((s) => s['id'] == id)
+        .firstOrNull;
+    if (session == null) throw const FormatException('会话已删除');
+    final history = session['messages'] as List;
+    if (history.isEmpty && initialTitle != null) {
+      session['title'] = initialTitle;
+    }
+    if (supersedeDrafts) {
+      for (final m in history) {
+        if (m['draft'] != null &&
+            m['draftStatus'] == null &&
+            m['applied'] != true) {
+          m['draftStatus'] = 'superseded';
+        }
+      }
+    }
+    history.addAll(messages);
+  });
+  Future<void> renameSession(String id, String title) => transaction((state) {
+    if (title.trim().isEmpty || title.length > 60) {
+      throw const FormatException('会话名称需为1–60字');
+    }
+    final session = (state['sessions'] as List)
+        .where((s) => s['id'] == id)
+        .firstOrNull;
+    if (session == null) throw const FormatException('会话已删除');
+    session['title'] = title.trim();
+  });
+  Future<void> dismissDraft(String sessionId, String draftId) =>
+      transaction((state) {
+        final session = (state['sessions'] as List)
+            .where((s) => s['id'] == sessionId)
+            .firstOrNull;
+        if (session == null) return;
+        for (final m in session['messages'] as List) {
+          if (m['draft']?['draftId'] == draftId && m['draftStatus'] == null) {
+            m['draftStatus'] = 'dismissed';
+          }
+        }
+      });
+  @override
+  void dispose() {
+    _closed = true;
+    super.dispose();
+  }
 }

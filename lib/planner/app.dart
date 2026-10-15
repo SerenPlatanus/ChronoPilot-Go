@@ -12,6 +12,7 @@ import 'mcp_server.dart';
 import 'editor.dart';
 import 'chat_page.dart';
 import 'features.dart';
+import 'schedule_audit.dart';
 
 const secureStore = FlutterSecureStorage(
   aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -35,15 +36,27 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
   String category = '', subject = '';
   bool showCompleted = false, refreshing = false;
   DateTime day = DateTime.now();
+  Timer? _clockTick;
+  void _startClock() {
+    _clockTick?.cancel();
+    _clockTick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _startClock();
     if (widget.repository != null) {
       repo = widget.repository;
       sync = SchoolSync(repo!, '', '');
-      chat = PlannerChat(repo!);
-      mcp = PlannerMcpServer(PlannerTools(repo!));
+      chat = PlannerChat(repo!, refreshContext: () => sync!.refresh());
+      mcp = PlannerMcpServer(
+        PlannerTools(repo!),
+        refreshContext: () => sync!.refresh(),
+      );
       repo!.addListener(changed);
     } else {
       unawaited(load());
@@ -65,8 +78,12 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
       }
       repo = r;
       sync = SchoolSync(r, username, password);
-      chat = PlannerChat(r);
-      mcp = PlannerMcpServer(PlannerTools(r));
+      final accountSync = sync!;
+      chat = PlannerChat(r, refreshContext: () => accountSync.refresh());
+      mcp = PlannerMcpServer(
+        PlannerTools(r),
+        refreshContext: () => accountSync.refresh(),
+      );
       r.addListener(changed);
       setState(() {});
       unawaited(refresh());
@@ -80,7 +97,10 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
   }
 
   Future<void> refresh({bool force = false}) async {
-    if (refreshing) return;
+    if (refreshing) {
+      await sync?.refresh(force: force, interactive: force);
+      return;
+    }
     setState(() => refreshing = true);
     try {
       await sync?.refresh(force: force, interactive: force);
@@ -92,10 +112,13 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _startClock();
       unawaited(refresh());
     }
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      _clockTick?.cancel();
+      chat?.cancel();
       unawaited(mcp?.stop());
     }
   }
@@ -103,9 +126,10 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _clockTick?.cancel();
     sync?.dispose();
     chat?.dispose();
-    unawaited(mcp?.stop());
+    mcp?.dispose();
     repo?.removeListener(changed);
     repo?.dispose();
     super.dispose();
@@ -130,6 +154,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
       sync?.dispose();
       chat?.dispose();
       await mcp?.stop();
+      mcp?.dispose();
       repo?.removeListener(changed);
       repo?.dispose();
       setState(() {
@@ -158,6 +183,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
     }
     final r = repo!;
     final now = DateTime.now();
+    final warnings = scheduleWarnings(r.items, now);
     final subjects =
         r.items
             .map((e) => e.subject)
@@ -224,6 +250,32 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
             )
           : Column(
               children: [
+                if (warnings.isNotEmpty)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.warning_amber),
+                    title: Text('有 ${warnings.length} 处安排需要调整'),
+                    subtitle: Text(
+                      warnings.first,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => showDialog<void>(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('日程变化'),
+                        content: SingleChildScrollView(
+                          child: Text(warnings.join('\n')),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(c),
+                            child: const Text('知道了'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 if (username.isEmpty)
                   ListTile(
                     dense: true,
@@ -543,7 +595,18 @@ class _PlannerSettingsState extends State<PlannerSettings> {
   String? error;
   bool saving = false;
   @override
+  void initState() {
+    super.initState();
+    widget.mcp.addListener(_serverChanged);
+  }
+
+  void _serverChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    widget.mcp.removeListener(_serverChanged);
     for (final c in [user, pass, keyField, modelField, preferences]) {
       c.dispose();
     }
@@ -612,7 +675,7 @@ class _PlannerSettingsState extends State<PlannerSettings> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const Text(
-          'Agent 接入暂未启用。可先保存模型配置；启用后发送对话会将日程、任务、备注和偏好发送至 DeepSeek。API Key 保存在本机安全存储中。',
+          '发送对话时将日程、任务、备注和明确填写的偏好发送至 DeepSeek。学号密码不会发送给模型；API Key 保存在本机安全存储。',
         ),
         TextField(
           controller: keyField,
@@ -666,7 +729,7 @@ class _PlannerSettingsState extends State<PlannerSettings> {
         ),
         const Text('仅在前台运行，离开 App 后停止。授权客户端可读取日程并提交方案；写入仍需你在 App 中确认。'),
         FilledButton.tonal(
-          onPressed: !mcpExecutionEnabled
+          onPressed: (!mcpExecutionEnabled || widget.mcp.starting)
               ? null
               : () async {
                   try {

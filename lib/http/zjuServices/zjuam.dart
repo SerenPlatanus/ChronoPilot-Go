@@ -37,6 +37,11 @@ class _SsoLoginKey {
 /// 轮换规则不可靠，1.2 引入的跨启动复用会把已失效值交给所有子站。
 class ZjuAm {
   static const _secureStorage = FlutterSecureStorage();
+  static void releaseClient(HttpClient client) {
+    _activeCookies.removeWhere((key, _) => identical(key.httpClient, client));
+    _pendingLogins.removeWhere((key, _) => identical(key.httpClient, client));
+  }
+
   static const _processCookieLifetime = Duration(minutes: 2);
   static final Map<_SsoLoginKey, Future<Cookie?>> _pendingLogins = {};
   static final Map<_SsoLoginKey, _ActiveSsoCookie> _activeCookies = {};

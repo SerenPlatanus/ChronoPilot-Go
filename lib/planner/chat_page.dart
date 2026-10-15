@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'chat_controller.dart';
-import 'item.dart';
+import 'draft_card.dart';
 import 'features.dart';
 
 class PlannerChatPage extends StatefulWidget {
@@ -20,6 +20,9 @@ class PlannerChatPage extends StatefulWidget {
 
 class _PlannerChatPageState extends State<PlannerChatPage> {
   final input = TextEditingController();
+  final scroll = ScrollController();
+  int _lastCount = -1;
+  String? _lastSession;
   String? selected;
   bool sending = false;
   String? error;
@@ -37,6 +40,7 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
   void dispose() {
     widget.chat.removeListener(update);
     input.dispose();
+    scroll.dispose();
     super.dispose();
   }
 
@@ -57,7 +61,10 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
       error = null;
     });
     try {
-      await widget.beforeSend();
+      if (widget.apiKey.trim().isEmpty) {
+        setState(() => error = '请先在设置填写自己的 DeepSeek API Key');
+        return;
+      }
       selected ??= await widget.chat.create();
       if (!mounted) return;
       input.clear();
@@ -75,9 +82,19 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
     if (selected != null && !sessions.any((e) => e['id'] == selected)) {
       selected = null;
     }
+    selected ??= widget.chat.activeSession;
     selected ??= sessions.firstOrNull?['id'] as String?;
     final current = selected == null ? null : widget.chat.session(selected!);
     final messages = current?['messages'] as List? ?? [];
+    if (_lastCount != messages.length || _lastSession != selected) {
+      _lastCount = messages.length;
+      _lastSession = selected;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && scroll.hasClients) {
+          scroll.jumpTo(scroll.position.maxScrollExtent);
+        }
+      });
+    }
     final busy = sending || widget.chat.busy;
     return Column(
       children: [
@@ -167,8 +184,7 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
                     );
                     controller.dispose();
                     if (name != null && name.isNotEmpty && current != null) {
-                      current['title'] = name;
-                      await widget.chat.repo.saveSession(current);
+                      await widget.chat.repo.renameSession(selected!, name);
                     }
                   }
                   if (mounted) setState(() {});
@@ -192,6 +208,7 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
                   ),
                 )
               : ListView.builder(
+                  controller: scroll,
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
                   itemBuilder: (context, i) {
@@ -214,76 +231,19 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
                             ),
                             const SizedBox(height: 6),
                             SelectableText(message['content'] as String? ?? ''),
-                            if (draft is Map) ...[
-                              const Divider(),
-                              Text(
-                                draft['summary'] as String? ?? '日程方案',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            if (draft is Map)
+                              DraftCard(
+                                key: ValueKey(draft['draftId']),
+                                tools: widget.chat.tools,
+                                draft: Map<String, dynamic>.from(draft),
+                                sessionId: selected!,
+                                status:
+                                    message['draftStatus'] as String? ??
+                                    (message['applied'] == true
+                                        ? 'applied'
+                                        : null),
+                                busy: busy,
                               ),
-                              for (final op in draft['operations'] as List)
-                                ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: Text(
-                                    '${switch (op['action']) {
-                                      'add' => '新增',
-                                      'delete' => '删除',
-                                      _ => '修改',
-                                    }} · ${op['title'] ?? widget.chat.repo.find(op['id'] as String)?.title ?? op['id']}',
-                                  ),
-                                  subtitle: op['start'] == null
-                                      ? null
-                                      : Text(
-                                          '${localTime(DateTime.parse(op['start'] as String))} — ${localTime(DateTime.parse(op['end'] as String))}',
-                                        ),
-                                ),
-                              FilledButton(
-                                onPressed:
-                                    !agentExecutionEnabled ||
-                                        busy ||
-                                        message['applied'] == true
-                                    ? null
-                                    : () async {
-                                        try {
-                                          await widget.chat.tools.apply(
-                                            Map<String, dynamic>.from(draft),
-                                          );
-                                          final latest = widget.chat.session(
-                                            selected!,
-                                          );
-                                          if (latest != null) {
-                                            (latest['messages']
-                                                    as List)[i]['applied'] =
-                                                true;
-                                            await widget.chat.repo.saveSession(
-                                              latest,
-                                            );
-                                          }
-                                          if (mounted) setState(() {});
-                                        } catch (e) {
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  e is FormatException
-                                                      ? e.message.toString()
-                                                      : '保存失败，请重试',
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        }
-                                      },
-                                child: Text(
-                                  message['applied'] == true
-                                      ? '已写入日程'
-                                      : '确认并写入日程',
-                                ),
-                              ),
-                            ],
                           ],
                         ),
                       ),
@@ -291,7 +251,24 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
                   },
                 ),
         ),
-        if (busy) const LinearProgressIndicator(),
+        if (busy) ...[
+          const LinearProgressIndicator(),
+          TextButton.icon(
+            onPressed: widget.chat.cancel,
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: const Text('取消本次请求'),
+          ),
+        ],
+        if (!busy &&
+            widget.chat.error != null &&
+            selected != null &&
+            messages.isNotEmpty &&
+            messages.last['role'] == 'user')
+          TextButton(
+            onPressed: () =>
+                widget.chat.retry(selected!, widget.apiKey, widget.model),
+            child: const Text('重试上一条（不重复保存消息）'),
+          ),
         if (error != null || widget.chat.error != null)
           Padding(
             padding: const EdgeInsets.all(8),

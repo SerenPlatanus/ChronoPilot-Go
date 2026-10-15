@@ -21,6 +21,9 @@ class AgentApiException implements Exception {
 
 class DeepSeekClient implements AgentCompletionClient {
   HttpClient? _active;
+  final HttpClient Function() _factory;
+  DeepSeekClient({HttpClient Function()? clientFactory})
+    : _factory = clientFactory ?? HttpClient.new;
   // Fixed official endpoint: credentials cannot be redirected to a custom host.
   static final endpoint = Uri.https('api.deepseek.com', '/chat/completions');
 
@@ -31,8 +34,7 @@ class DeepSeekClient implements AgentCompletionClient {
     required List<Map<String, dynamic>> messages,
     required List<Map<String, dynamic>> tools,
   }) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 15);
+    final client = _factory()..connectionTimeout = const Duration(seconds: 15);
     _active = client;
     try {
       return await (() async {

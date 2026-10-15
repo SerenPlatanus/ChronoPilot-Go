@@ -10,7 +10,7 @@ Future<void> main() async {
   runApp(
     MaterialApp(
       navigatorKey: navigatorKey,
-      title: '浙大日程',
+      title: 'ChronoPilot Go',
       debugShowCheckedModeBanner: false,
       locale: const Locale('zh', 'CN'),
       localizationsDelegates: GlobalMaterialLocalizations.delegates,

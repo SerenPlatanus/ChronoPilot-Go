@@ -6,7 +6,7 @@ import 'package:celechron/planner/item.dart';
 import 'package:celechron/planner/repository.dart';
 
 void main() {
-  testWidgets('四个页面、添加事项和暂停入口能够正常显示', (tester) async {
+  testWidgets('四个页面、添加事项和 Agent 入口能够正常显示', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -50,11 +50,11 @@ void main() {
     expect(repo.items.any((e) => e.title == '线性代数练习'), isTrue);
     await tester.tap(find.byIcon(Icons.auto_awesome_outlined));
     await tester.pumpAndSettle();
-    expect(find.text('Agent 接入开发已暂停'), findsOneWidget);
+    expect(find.text('Agent 接入开发已暂停'), findsNothing);
     final send = tester.widget<IconButton>(
       find.widgetWithIcon(IconButton, Icons.send),
     );
-    expect(send.onPressed, isNull);
+    expect(send.onPressed, isNotNull);
     await tester.tap(find.byIcon(Icons.add_comment_outlined));
     await tester.pumpAndSettle();
     expect(repo.sessions, hasLength(1));

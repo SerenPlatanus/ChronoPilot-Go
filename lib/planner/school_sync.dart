@@ -147,11 +147,9 @@ class SchoolSync implements SchoolDataApi {
             for (final dto in response.item2) {
               for (final exam in dto.exams) {
                 if (exam.time.length < 2) continue;
-                // The old parser uses year 2000 as a sentinel for undated exams.
+                // The parser uses year 1970 for dates relative to an exam week.
                 final dated = exam.time.first.year >= 2020;
-                final id = stableId(
-                  'exam:${exam.id}:${exam.type}:${exam.time.first}',
-                );
+                final id = stableId('exam:${exam.id}:${exam.type}');
                 items[id] = Item(
                   id: id,
                   categoryId: 'exam',
@@ -226,6 +224,7 @@ class SchoolSync implements SchoolDataApi {
       await failure('exams', e);
     } finally {
       GlobalStatus.isFirstScreenReq = false;
+      ZjuAm.releaseClient(client);
       client.close(force: true);
       _client = null;
     }

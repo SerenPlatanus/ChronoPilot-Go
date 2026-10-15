@@ -46,21 +46,36 @@ void main() {
     expect((await call('tools/list', origin: 'https://evil.example')).$1, 403);
     final init = await call(
       'initialize',
-      params: {'protocolVersion': '2025-11-25'},
+      params: {
+        'protocolVersion': '2025-11-25',
+        'capabilities': {},
+        'clientInfo': {'name': 'test', 'version': '1'},
+      },
     );
     expect(init.$2['result']['protocolVersion'], '2025-11-25');
     final listing = await call('tools/list');
     expect(listing.$2['result']['tools'], hasLength(2));
-    final now = DateTime.now().add(const Duration(days: 1));
+    final date = DateTime.now();
+    final now = DateTime(date.year, date.month, date.day + 1, 14);
+    await r.saveItem(
+      const Item(
+        id: 'task',
+        categoryId: 'task',
+        title: '学习',
+        estimatedMinutes: 30,
+      ),
+    );
     final plan = await call(
       'tools/call',
       params: {
         'name': 'propose_schedule',
         'arguments': {
           'summary': '测试',
+          'contextVersion': PlannerTools(r).contextVersion,
           'operations': [
             {
               'action': 'add',
+              'parentId': 'task',
               'title': '日程',
               'start': timestamp(now),
               'end': timestamp(now.add(const Duration(minutes: 30))),
@@ -70,11 +85,24 @@ void main() {
       },
     );
     expect(plan.$2['result']['isError'], isFalse);
-    expect(r.items, isEmpty);
+    expect(r.items, hasLength(1));
     expect(r.sessions, hasLength(1));
     final apply = await call('tools/call', params: {'name': 'apply_plan'});
-    expect(apply.$2['result']['isError'], isTrue);
-    expect(r.items, isEmpty);
+    expect(apply.$2['error']['code'], -32602);
+    expect(r.items, hasLength(1));
+    final resource = await call(
+      'resources/read',
+      params: {'uri': 'chronopilot://schedule/context'},
+    );
+    expect(
+      resource.$2['result']['contents'][0]['mimeType'],
+      'application/json',
+    );
+    expect((await call('unknown')).$2['error']['code'], -32601);
+    final previousToken = server.token;
+    await server.stop();
+    await server.start(port: 0);
+    expect(server.token, isNot(previousToken));
     await server.stop();
     expect(server.token, isNull);
     expect(server.running, isFalse);

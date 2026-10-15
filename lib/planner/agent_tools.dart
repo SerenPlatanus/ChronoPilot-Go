@@ -2,17 +2,25 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import 'item.dart';
 import 'repository.dart';
+import 'schedule_audit.dart';
 
-/// Shared, deliberately narrow capabilities for the in-app agent and MCP.
+/// Shared read/propose capabilities. Applying a draft is an app-only action.
 class PlannerTools {
   final PlannerRepository repo;
-  PlannerTools(this.repo);
-  String fingerprint(List<Item> items) =>
-      stableId(jsonEncode(items.map((e) => e.toJson()).toList()));
+  final DateTime Function() clock;
+  PlannerTools(this.repo, {DateTime Function()? clock})
+    : clock = clock ?? DateTime.now;
+  String fingerprint(List<Item> items) {
+    final sorted = items.toList()..sort((a, b) => a.id.compareTo(b.id));
+    return stableId(jsonEncode(sorted.map((e) => e.toJson()).toList()));
+  }
+
+  String get contextVersion =>
+      stableId('${fingerprint(repo.items)}:${repo.preferences}');
   Map<String, dynamic> context() {
-    final now = DateTime.now();
+    final now = clock();
     final until = now.add(const Duration(days: 31));
-    final items = repo.items
+    final all = repo.items
         .where(
           (e) =>
               !e.completed &&
@@ -20,21 +28,46 @@ class PlannerTools {
               (e.end == null || e.end!.isAfter(now)),
         )
         .toList();
+    // Fail clearly rather than silently omit occupied periods from model input.
+    if (all.length > 1500) throw const FormatException('未来事项过多，请先整理已完成任务');
+    final allocated = <String, int>{};
+    for (final i in repo.items.where((e) => e.parentId != null && e.timed)) {
+      allocated.update(
+        i.parentId!,
+        (n) => n + i.end!.difference(i.start!).inSeconds,
+        ifAbsent: () => i.end!.difference(i.start!).inSeconds,
+      );
+    }
     return {
-      'now': now.toIso8601String(),
+      'now': timestamp(now),
+      'contextVersion': contextVersion,
       'utcOffsetMinutes': now.timeZoneOffset.inMinutes,
+      'localNow': now.toIso8601String(),
       'windowEnd': timestamp(until),
       'preferences': repo.preferences,
+      'planningWarnings': scheduleWarnings(repo.items, now),
       'sync': repo.syncStatus,
-      'items': items.map((e) => e.toJson()).toList(),
-      'instruction': '预计用时为 null 时必须询问用户填写，不得猜测。学校数据可能缓存，请检查 sync。',
+      'items': all
+          .map(
+            (e) => {
+              ...e.toJson(),
+              if (e.estimatedMinutes != null)
+                'unallocatedMinutes':
+                    ((e.estimatedMinutes! * 60 - (allocated[e.id] ?? 0)) / 60)
+                        .clamp(0, e.estimatedMinutes!)
+                        .toDouble(),
+            },
+          )
+          .toList(),
+      'instruction':
+          '只安排已有作业、个人任务或考试复习；预计用时必须用户填写。已分配时间包含过去及已完成时间块。检查同步状态；所有变更待用户确认。',
     };
   }
 
   static const definitions = <Map<String, dynamic>>[
     {
       'name': 'get_schedule_context',
-      'description': '读取当前时间、未来31天课表、考试、任务、截止日期、用户填写的预计用时及同步状态。',
+      'description': '读取当前时间、未来31天课表、考试、任务、截止日期、用户用时、偏好与同步状态。',
       'inputSchema': {
         'type': 'object',
         'properties': {},
@@ -43,11 +76,17 @@ class PlannerTools {
     },
     {
       'name': 'propose_schedule',
-      'description': '提交待确认的日程变更。只允许添加固定时间块或修改/删除本地固定日程。不会直接写入日程。',
+      'description':
+          '为已有作业、考试复习或个人任务提出时间块方案；必须关联已有事项。修改/删除只能针对此前 Agent 时间块。仅生成草稿，不写入日程。',
       'inputSchema': {
         'type': 'object',
         'properties': {
-          'summary': {'type': 'string'},
+          'summary': {'type': 'string', 'maxLength': 1000},
+          'contextVersion': {
+            'type': 'string',
+            'description':
+                '必须原样提供最近 get_schedule_context 或注入数据中的 contextVersion',
+          },
           'operations': {
             'type': 'array',
             'minItems': 1,
@@ -59,14 +98,22 @@ class PlannerTools {
                   'type': 'string',
                   'enum': ['add', 'update', 'delete'],
                 },
-                'id': {'type': 'string', 'description': '修改或删除的现有事项ID'},
-                'title': {'type': 'string'},
-                'subject': {'type': 'string'},
-                'start': {'type': 'string', 'description': 'ISO8601，必须带时区偏移'},
-                'end': {'type': 'string', 'description': 'ISO8601，必须带时区偏移'},
+                'id': {
+                  'type': 'string',
+                  'description': 'update/delete 的现有 Agent 时间块 ID',
+                },
+                'title': {'type': 'string', 'maxLength': 120},
+                'start': {
+                  'type': 'string',
+                  'description': '带 Z 或 ±HH:mm 时区的 ISO8601 时间',
+                },
+                'end': {
+                  'type': 'string',
+                  'description': '带 Z 或 ±HH:mm 时区的 ISO8601 时间',
+                },
                 'parentId': {
                   'type': 'string',
-                  'description': '安排作业/任务时必须关联其ID，且用户已填写预计用时',
+                  'description': 'add 必填，已存在的作业/考试/个人任务 ID；不能为该事项推测用时',
                 },
               },
               'required': ['action'],
@@ -74,34 +121,89 @@ class PlannerTools {
             },
           },
         },
-        'required': ['summary', 'operations'],
+        'required': ['summary', 'operations', 'contextVersion'],
         'additionalProperties': false,
       },
     },
   ];
-  Map<String, dynamic> draft(Map<String, dynamic> args) {
-    final result = {
-      ...args,
+  Map<String, dynamic> draft(
+    Map<String, dynamic> args, {
+    bool fromTool = false,
+  }) {
+    if (fromTool && args['contextVersion'] != contextVersion) {
+      throw const FormatException(
+        '上下文已变化或缺少版本。请先调用 get_schedule_context 重新读取，再按最新数据生成方案',
+      );
+    }
+    if (args.keys.any(
+          (k) => !['summary', 'operations', 'contextVersion'].contains(k),
+        ) ||
+        args['summary'] is! String ||
+        (args['summary'] as String).trim().isEmpty ||
+        (args['summary'] as String).length > 1000 ||
+        args['operations'] is! List) {
+      throw const FormatException('方案需要 summary 和 operations');
+    }
+    final ops = <Map<String, dynamic>>[];
+    for (final raw in args['operations'] as List) {
+      if (raw is! Map) throw const FormatException('操作格式无效');
+      final op = Map<String, dynamic>.from(raw);
+      if (op.keys.any(
+        (k) =>
+            !['action', 'id', 'title', 'start', 'end', 'parentId'].contains(k),
+      )) {
+        throw const FormatException('包含不允许修改的字段');
+      }
+      if (op['action'] == 'add') {
+        if (op.containsKey('id')) throw const FormatException('新增 ID 由应用生成');
+        op['id'] = const Uuid().v4();
+      }
+      ops.add(op);
+    }
+    final result = <String, dynamic>{
+      'summary': args['summary'],
+      'operations': ops,
       'draftId': const Uuid().v4(),
       'baseline': fingerprint(repo.items),
-      'createdAt': timestamp(DateTime.now()),
+      'preferencesHash': stableId(repo.preferences),
+      'createdAt': timestamp(clock()),
     };
-    // Allocate stable IDs before preview, so confirmation is idempotent.
-    result['operations'] = (args['operations'] as List)
+    validate(result, repo.items);
+    // Store exact before/after values for review, including deletions.
+    result['changes'] = ops
         .map(
-          (e) => {
-            ...Map<String, dynamic>.from(e as Map),
-            if (e['action'] == 'add') 'id': const Uuid().v4(),
+          (op) => {
+            'action': op['action'],
+            'before': repo.find(op['id'] as String)?.toJson(),
+            'after': op['action'] == 'delete'
+                ? null
+                : _resultItem(op, repo.items).toJson(),
           },
         )
         .toList();
-    validate(result, repo.items);
     return result;
   }
 
+  Item _resultItem(Map<String, dynamic> op, List<Item> current) {
+    final old = current.where((e) => e.id == op['id']).firstOrNull;
+    final parentId = op['parentId'] ?? old?.parentId;
+    final parent = current.where((e) => e.id == parentId).firstOrNull;
+    return Item.fromJson({
+      if (old != null) ...old.toJson(),
+      ...op,
+      'categoryId': 'event',
+      'origin': 'agent',
+      'sourceKey': '',
+      'subject': parent?.subject ?? '',
+      'parentId': parentId,
+      'revision': old == null ? 0 : old.revision + 1,
+    });
+  }
+
   List<Item> validate(Map<String, dynamic> draft, List<Item> current) {
-    if (draft['baseline'] != fingerprint(current)) {
-      throw const FormatException('事项已变化，请让 Agent 重新生成方案');
+    if (draft['baseline'] != fingerprint(current) ||
+        draft['preferencesHash'] != stableId(repo.preferences)) {
+      throw const FormatException('事项或偏好已变化，请重新生成方案');
     }
     final operations = draft['operations'] as List;
     if (operations.isEmpty || operations.length > 40) {
@@ -109,58 +211,99 @@ class PlannerTools {
     }
     final next = {for (final i in current) i.id: i};
     final changed = <String>{};
-    final now = DateTime.now();
+    final now = clock();
     for (final raw in operations) {
       final op = Map<String, dynamic>.from(raw as Map);
-      final id = op['id'] as String;
-      if (!changed.add(id)) throw const FormatException('同一事项不能重复修改');
-      final old = next[id];
+      final id = op['id'];
+      if (id is! String || !changed.add(id)) {
+        throw const FormatException('ID 无效或重复修改');
+      }
       final action = op['action'];
+      final old = next[id];
       if (action != 'add' &&
-          (old == null || old.school || old.categoryId != 'event')) {
-        throw const FormatException('只能修改或删除本地固定日程');
+          (old == null ||
+              old.origin != 'agent' ||
+              old.categoryId != 'event' ||
+              old.completed ||
+              old.start == null ||
+              !old.start!.isAfter(now))) {
+        throw const FormatException('只可调整尚未开始的 Agent 时间块，不能修改课程、考试或手动固定日程');
       }
       if (action == 'delete') {
+        if (op.keys.any((k) => !['action', 'id'].contains(k))) {
+          throw const FormatException('删除操作只需 action/id');
+        }
         next.remove(id);
         continue;
       }
-      if (action != 'add' && action != 'update') {
+      if (!['add', 'update'].contains(action)) {
         throw const FormatException('未知操作');
       }
-      if (action == 'add' && old != null) throw const FormatException('事项ID重复');
-      final data = <String, dynamic>{
-        if (old != null) ...old.toJson(),
-        ...op,
-        'id': id,
-        'categoryId': 'event',
-        'origin': 'agent',
-        'revision': old == null ? 0 : old.revision + 1,
-      };
+      if (action == 'add' && old != null) throw const FormatException('ID 已存在');
+      if (action == 'update' &&
+          op.containsKey('parentId') &&
+          op['parentId'] != old!.parentId) {
+        throw const FormatException('不可更换时间块的关联事项');
+      }
+      final item = _resultItem(op, current);
+      item.validate();
       for (final field in ['start', 'end']) {
-        final rawDate = data[field];
-        if (rawDate is! String ||
-            !RegExp(r'(Z|[+-]\d\d:\d\d)$').hasMatch(rawDate)) {
-          throw const FormatException('时间必须包含时区');
+        final value = op[field] ?? old?.toJson()[field];
+        if (value is! String ||
+            !RegExp(
+              r'^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d{1,6})?)?(Z|[+-]\d\d:\d\d)$',
+            ).hasMatch(value)) {
+          throw const FormatException('时间必须包含明确时区');
+        }
+        final parts = RegExp(
+          r'^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)(?::(\d\d))?',
+        ).firstMatch(value)!;
+        final y = int.parse(parts[1]!),
+            m = int.parse(parts[2]!),
+            d = int.parse(parts[3]!),
+            h = int.parse(parts[4]!),
+            min = int.parse(parts[5]!),
+            sec = int.parse(parts[6] ?? '0');
+        final date = DateTime.utc(y, m, d, h, min, sec);
+        if (date.year != y ||
+            date.month != m ||
+            date.day != d ||
+            date.hour != h ||
+            date.minute != min ||
+            date.second != sec) {
+          throw const FormatException('日期或时间超出有效范围');
         }
       }
-      final item = Item.fromJson(data);
-      item.validate();
       if (!item.timed ||
           item.start!.isBefore(now) ||
           item.end!.isAfter(now.add(const Duration(days: 31)))) {
         throw const FormatException('只能安排未来31天内的时间段');
       }
-      if (item.parentId != null) {
-        final parent = next[item.parentId];
-        if (parent == null || parent.completed) {
-          throw const FormatException('关联任务不存在或已完成');
-        }
-        if (parent.estimatedMinutes == null) {
-          throw const FormatException('请先由用户填写关联事项的预计用时');
-        }
-        if (parent.deadline != null && item.end!.isAfter(parent.deadline!)) {
-          throw const FormatException('安排晚于任务截止时间');
-        }
+      if (item.start!.second != 0 ||
+          item.end!.second != 0 ||
+          item.start!.millisecond != 0 ||
+          item.end!.millisecond != 0 ||
+          item.start!.microsecond != 0 ||
+          item.end!.microsecond != 0) {
+        throw const FormatException('请使用整分钟时间');
+      }
+      final parent = next[item.parentId];
+      if (parent == null ||
+          parent.completed ||
+          !['homework', 'task', 'exam'].contains(parent.categoryId)) {
+        throw const FormatException('必须关联未完成的已有作业、个人任务或考试');
+      }
+      if (parent.estimatedMinutes == null) {
+        throw FormatException('请先在事项页填写「${parent.title}」的预计用时');
+      }
+      final deadline = parent.categoryId == 'exam'
+          ? parent.start ?? parent.deadline
+          : parent.deadline;
+      if (parent.categoryId == 'exam' && deadline == null) {
+        throw const FormatException('考试日期未公布，请先补充考试时间再安排复习');
+      }
+      if (deadline != null && item.end!.isAfter(deadline)) {
+        throw const FormatException('安排晚于截止时间或考试开始');
       }
       next[id] = item;
     }
@@ -168,68 +311,77 @@ class PlannerTools {
       final item = next[id];
       if (item == null) continue;
       for (final other in next.values) {
-        if (other.id != id && !other.completed && item.overlaps(other)) {
+        // Marking a fixed event complete does not erase its occupied time.
+        if (other.id != id && item.overlaps(other)) {
           throw FormatException('「${item.title}」与「${other.title}」时间冲突');
         }
       }
     }
-    final allocated = <String, int>{};
-    for (final item in next.values.where(
-      (e) =>
-          e.parentId != null && e.timed && !e.completed && e.end!.isAfter(now),
-    )) {
-      allocated.update(
-        item.parentId!,
-        (n) => n + item.end!.difference(item.start!).inMinutes,
-        ifAbsent: () => item.end!.difference(item.start!).inMinutes,
-      );
-    }
-    for (final id in allocated.keys) {
-      final parent = next[id];
-      if (parent?.estimatedMinutes != null &&
-          allocated[id]! > parent!.estimatedMinutes!) {
-        throw FormatException('「${parent.title}」安排总时长超过用户填写的预计用时');
+    final parents = changed
+        .map((id) => next[id]?.parentId)
+        .whereType<String>()
+        .toSet();
+    for (final id in parents) {
+      final seconds = next.values
+          .where((e) => e.parentId == id && e.timed)
+          .fold<int>(0, (n, e) => n + e.end!.difference(e.start!).inSeconds);
+      if (seconds > next[id]!.estimatedMinutes! * 60) {
+        throw FormatException('「${next[id]!.title}」总安排超过用户预计用时（含过去/已完成时间块）');
       }
     }
     return next.values.toList();
   }
 
-  Future<void> apply(Map<String, dynamic> draft) => repo.transaction((state) {
+  Future<void> apply(
+    Map<String, dynamic> draft, {
+    String? sessionId,
+  }) => repo.transaction((state) {
     final applied = List<String>.from(state['appliedDrafts'] as List? ?? []);
     if (applied.contains(draft['draftId'])) {
       throw const FormatException('此方案已经应用');
     }
-    final current =
-        (state['items'] as List)
-            .map((e) => Item.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList()
-          ..sort(
-            (a, b) => (a.sortTime ?? DateTime(9999)).compareTo(
-              b.sortTime ?? DateTime(9999),
-            ),
-          );
-    final next = validate(draft, current);
-    state['items'] = next.map((e) => e.toJson()).toList();
+    Map? message;
+    if (sessionId != null) {
+      final sessions = state['sessions'] as List;
+      final session = sessions.where((s) => s['id'] == sessionId).firstOrNull;
+      if (session == null) throw const FormatException('会话已删除');
+      message =
+          (session['messages'] as List)
+                  .where((m) => m['draft']?['draftId'] == draft['draftId'])
+                  .firstOrNull
+              as Map?;
+      if (message == null ||
+          message['draftStatus'] != null ||
+          jsonEncode(message['draft']) != jsonEncode(draft)) {
+        throw const FormatException('方案已失效，请重新生成');
+      }
+    }
+    final current = (state['items'] as List)
+        .map((e) => Item.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+    state['items'] = validate(draft, current).map((e) => e.toJson()).toList();
     applied.add(draft['draftId'] as String);
     state['appliedDrafts'] = applied;
+    if (message != null) {
+      message['applied'] = true;
+      message['draftStatus'] = 'applied';
+    }
   });
   Future<Map<String, dynamic>> saveMcpDraft(Map<String, dynamic> args) async {
-    final plan = draft(args);
+    final plan = draft(args, fromTool: true);
+    final id = const Uuid().v4();
     await repo.saveSession({
-      'id': const Uuid().v4(),
+      'id': id,
       'title': 'MCP 日程方案',
       'messages': [
-        {
-          'role': 'assistant',
-          'content': args['summary'] ?? '待确认方案',
-          'draft': plan,
-        },
+        {'role': 'assistant', 'content': args['summary'], 'draft': plan},
       ],
     });
     return {
       'status': 'pending_confirmation',
       'draftId': plan['draftId'],
-      'message': '已放入 App 的 Agent 会话，用户点击确认后才会写入。',
+      'sessionId': id,
+      'message': '请在 App 的 Agent 会话查看并确认；尚未写入日程。',
     };
   }
 }
