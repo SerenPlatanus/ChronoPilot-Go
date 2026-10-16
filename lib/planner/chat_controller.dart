@@ -15,6 +15,8 @@ class PlannerChat extends ChangeNotifier {
   int _generation = 0;
   Completer<void>? _cancelled;
   String? error, activeSession;
+  String streamedText = "";
+  Timer? _streamTick;
   PlannerChat(this.repo, {AgentCompletionClient? client, this.refreshContext})
     : tools = PlannerTools(repo),
       client = client ?? DeepSeekClient();
@@ -30,7 +32,7 @@ estimatedMinutes 必须由用户在事项页填写；缺少时明确提醒，不
 不索取账号密码/API Key；不支持重复规则或任何通知。''';
   Future<String> create() async {
     final id = const Uuid().v4();
-    await repo.saveSession({'id': id, 'title': '新会话', 'messages': []});
+    await repo.saveSession({'id': id, 'title': '新对话', 'messages': []});
     return id;
   }
 
@@ -41,6 +43,8 @@ estimatedMinutes 必须由用户在事项页填写；缺少时明确提醒，不
     _generation++;
     client.cancel();
     if (_cancelled?.isCompleted == false) _cancelled!.complete();
+    streamedText = '';
+    _streamTick?.cancel();
     error = '本次请求已取消；未写入日程';
     if (!_disposed) notifyListeners();
   }
@@ -65,6 +69,7 @@ estimatedMinutes 必须由用户在事项页填写；缺少时明确提醒，不
       return;
     }
     busy = true;
+    streamedText = "";
     error = null;
     activeSession = id;
     final generation = ++_generation;
@@ -114,24 +119,45 @@ estimatedMinutes 必须由用户在事项页填写；缺少时明确提醒，不
       var content = '';
       bool finished = false;
       for (var round = 0; round < 6; round++) {
+        streamedText = '';
+        if (!_disposed) notifyListeners();
+        final definitions = PlannerTools.definitions
+            .map(
+              (e) => {
+                'type': 'function',
+                'function': {
+                  'name': e['name'],
+                  'description': e['description'],
+                  'parameters': e['inputSchema'],
+                },
+              },
+            )
+            .toList();
+        void onDelta(String delta) {
+          if (!_active(generation)) return;
+          streamedText += delta;
+          _streamTick ??= Timer(const Duration(milliseconds: 50), () {
+            _streamTick = null;
+            if (_active(generation)) notifyListeners();
+          });
+        }
+
+        final pending = client is AgentStreamingClient
+            ? (client as AgentStreamingClient).completeStreaming(
+                apiKey: key.trim(),
+                model: model.trim(),
+                messages: messages,
+                tools: definitions,
+                onTextDelta: onDelta,
+              )
+            : client.complete(
+                apiKey: key.trim(),
+                model: model.trim(),
+                messages: messages,
+                tools: definitions,
+              );
         final response = await Future.any<Map<String, dynamic>>([
-          client.complete(
-            apiKey: key.trim(),
-            model: model.trim(),
-            messages: messages,
-            tools: PlannerTools.definitions
-                .map(
-                  (e) => {
-                    'type': 'function',
-                    'function': {
-                      'name': e['name'],
-                      'description': e['description'],
-                      'parameters': e['inputSchema'],
-                    },
-                  },
-                )
-                .toList(),
-          ),
+          pending,
           _cancelled!.future.then((_) => <String, dynamic>{}),
         ]);
         if (!_active(generation)) return;
@@ -193,6 +219,9 @@ estimatedMinutes 必须由用户在事项页填写；缺少时明确提醒，不
             : '请求失败，请重试；日程未修改';
       }
     } finally {
+      _streamTick?.cancel();
+      _streamTick = null;
+      streamedText = '';
       busy = false;
       activeSession = null;
       if (!_disposed) notifyListeners();
@@ -215,6 +244,7 @@ estimatedMinutes 必须由用户在事项页填写；缺少时明确提醒，不
   @override
   void dispose() {
     _disposed = true;
+    _streamTick?.cancel();
     _generation++;
     client.cancel();
     if (_cancelled?.isCompleted == false) _cancelled!.complete();

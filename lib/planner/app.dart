@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'item.dart';
+import 'semester_filter.dart';
+import '../ui/course_color.dart';
+import '../ui/planner_calendar.dart';
 import 'repository.dart';
 import 'school_sync.dart';
 import 'agent_tools.dart';
@@ -11,12 +11,12 @@ import 'chat_controller.dart';
 import 'mcp_server.dart';
 import 'editor.dart';
 import 'chat_page.dart';
-import 'features.dart';
 import 'schedule_audit.dart';
-
-const secureStore = FlutterSecureStorage(
-  aOptions: AndroidOptions(encryptedSharedPreferences: true),
-);
+import 'credentials.dart';
+import 'settings_page.dart';
+import '../ui/styles.dart';
+import '../ui/components.dart';
+import '../ui/countdown.dart';
 
 class PlannerApp extends StatefulWidget {
   final PlannerRepository? repository;
@@ -34,7 +34,8 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
   String? failure;
   int tab = 0;
   String category = '', subject = '';
-  bool showCompleted = false, refreshing = false;
+  String term = academicTerm(DateTime.now());
+  bool showCompleted = false, refreshing = false, filtersOpen = false;
   DateTime day = DateTime.now();
   Timer? _clockTick;
   void _startClock() {
@@ -177,22 +178,29 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
         body: Center(
           child: failure == null
               ? const CircularProgressIndicator()
-              : Text(failure!),
+              : Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(failure!),
+                ),
         ),
       );
     }
-    final r = repo!;
-    final now = DateTime.now();
+    final r = repo!, v = PilotVisuals.of(context), now = DateTime.now();
     final warnings = scheduleWarnings(r.items, now);
+    final termItems = r.items.where((e) => inTerm(e, term)).toList();
+    final terms = {
+      academicTerm(now),
+      ...r.items.map(itemTerm).whereType<String>(),
+    }.toList()..sort((a, b) => b.compareTo(a));
     final subjects =
-        r.items
+        termItems
             .map((e) => e.subject)
             .where((e) => e.isNotEmpty)
             .toSet()
             .toList()
           ..sort();
     if (!subjects.contains(subject)) subject = '';
-    final filtered = r.items.where(
+    final filtered = termItems.where(
       (e) =>
           (category.isEmpty || category == e.categoryId) &&
           (subject.isEmpty || subject == e.subject),
@@ -202,227 +210,349 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
           (e) => tab == 0
               ? e.upcoming(now)
               : tab == 1
-              ? e.timed &&
-                    e.start!.isBefore(
-                      DateTime(day.year, day.month, day.day + 1),
-                    ) &&
-                    e.end!.isAfter(DateTime(day.year, day.month, day.day))
+              ? onDay([e], DateTime(day.year, day.month, day.day)).isNotEmpty
               : e.categoryId != 'course' && (showCompleted || !e.completed),
         )
         .toList();
+    final upcoming = items.where((e) => e.countdownTarget(now) != null).toList()
+      ..sort(
+        (a, b) => a.countdownTarget(now)!.compareTo(b.countdownTarget(now)!),
+      );
+
+    if (tab == 0) {
+      final untimed = items
+          .where((e) => e.countdownTarget(now) == null)
+          .toList();
+      items
+        ..clear()
+        ..addAll([...upcoming, ...untimed]);
+    }
     final errors = r.syncStatus.values
         .whereType<Map>()
         .where((e) => e['error'] != null)
         .length;
+    final pagePadding = MediaQuery.sizeOf(context).width < 360 ? 12.0 : 20.0;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(['接下来', '课表与日程', '事项', 'Agent'][tab]),
-        actions: [
-          if (refreshing)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          else
-            IconButton(
-              onPressed: () => refresh(force: true),
-              icon: const Icon(Icons.sync),
-              tooltip: '更新学校数据',
+      appBar: tab == 3
+          ? null
+          : AppBar(
+              title: Text(['接下来', '课表与日程', '事项', 'Agent'][tab]),
+              actions: [
+                if (tab != 3)
+                  IconButton(
+                    tooltip: '筛选事项',
+                    icon: Icon(
+                      filtersOpen
+                          ? Icons.filter_alt
+                          : Icons.filter_alt_outlined,
+                    ),
+                    onPressed: () => setState(() => filtersOpen = !filtersOpen),
+                  ),
+                if (refreshing)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else
+                  IconButton(
+                    onPressed: () => refresh(force: true),
+                    icon: const Icon(Icons.sync),
+                    tooltip: '更新学校数据',
+                  ),
+                IconButton(
+                  onPressed: settings,
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: '设置',
+                ),
+                const SizedBox(width: 8),
+              ],
             ),
-          IconButton(
-            onPressed: settings,
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: '设置',
-          ),
-        ],
-      ),
-      body: tab == 3
-          ? PlannerChatPage(
-              key: ValueKey(r.scope),
-              chat: chat!,
-              apiKey: apiKey,
-              model: model,
-              beforeSend: () => refresh(),
-            )
-          : Column(
-              children: [
-                if (warnings.isNotEmpty)
-                  ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.warning_amber),
-                    title: Text('有 ${warnings.length} 处安排需要调整'),
-                    subtitle: Text(
-                      warnings.first,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    onTap: () => showDialog<void>(
-                      context: context,
-                      builder: (c) => AlertDialog(
-                        title: const Text('日程变化'),
-                        content: SingleChildScrollView(
-                          child: Text(warnings.join('\n')),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(c),
-                            child: const Text('知道了'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (username.isEmpty)
-                  ListTile(
-                    dense: true,
-                    title: const Text('当前为本地模式，可在设置中连接本科生账号'),
-                    onTap: settings,
-                  ),
-                if (errors > 0)
-                  ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.cloud_off_outlined),
-                    title: const Text('部分学校数据未更新，正在使用本地记录'),
-                    subtitle: const Text('在设置查看数据来源和更新时间'),
-                    onTap: settings,
-                  ),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      ChoiceChip(
-                        label: const Text('全部类别'),
-                        selected: category.isEmpty,
-                        onSelected: (_) => setState(() => category = ''),
-                      ),
-                      for (final c in ItemCategory.values)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: ChoiceChip(
-                            label: Text(c.label),
-                            selected: category == c.id,
-                            onSelected: (_) => setState(() => category = c.id),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButton<String>(
-                          value: subject,
-                          isExpanded: true,
-                          items: [
-                            const DropdownMenuItem(
-                              value: '',
-                              child: Text('全部学科'),
-                            ),
-                            ...subjects.map(
-                              (s) => DropdownMenuItem(
-                                value: s,
-                                child: Text(s, overflow: TextOverflow.ellipsis),
-                              ),
-                            ),
-                          ],
-                          onChanged: (v) => setState(() => subject = v!),
-                        ),
-                      ),
-                      if (tab == 2)
-                        FilterChip(
-                          label: const Text('含已完成'),
-                          selected: showCompleted,
-                          onSelected: (v) => setState(() => showCompleted = v),
-                        ),
-                    ],
-                  ),
-                ),
-                if (tab == 1)
-                  Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          IconButton(
-                            onPressed: () => setState(
-                              () => day = day.subtract(const Duration(days: 7)),
-                            ),
-                            icon: const Icon(Icons.chevron_left),
-                          ),
-                          TextButton(
-                            onPressed: () =>
-                                setState(() => day = DateTime.now()),
-                            child: Text('${day.year}年${day.month}月 · 回到今天'),
-                          ),
-                          IconButton(
-                            onPressed: () => setState(
-                              () => day = day.add(const Duration(days: 7)),
-                            ),
-                            icon: const Icon(Icons.chevron_right),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: List.generate(7, (i) {
-                          final d = DateTime(
-                            day.year,
-                            day.month,
-                            day.day - day.weekday + 1 + i,
-                          );
-                          return Expanded(
-                            child: InkWell(
-                              onTap: () => setState(() => day = d),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
+      body: ContentFrame(
+        child: tab == 3
+            ? PlannerChatPage(
+                key: ValueKey(r.scope),
+                chat: chat!,
+                apiKey: apiKey,
+                model: model,
+                beforeSend: () => refresh(),
+                onSettings: settings,
+              )
+            : RefreshIndicator(
+                onRefresh: () => refresh(force: true),
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    SliverPadding(
+                      padding: EdgeInsets.symmetric(horizontal: pagePadding),
+                      sliver: SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (tab == 0)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  top: 16,
+                                  bottom: 14,
                                 ),
-                                color: d.day == day.day
-                                    ? Theme.of(
-                                        context,
-                                      ).colorScheme.primaryContainer
-                                    : null,
-                                child: Column(
+                                child: Text(
+                                  '即将开始',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            if (tab == 0)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: DailyOccupancyTrace(items: termItems),
+                              ),
+                            if (tab != 0)
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
                                   children: [
-                                    Text('一二三四五六日'[i]),
-                                    Text('${d.day}'),
+                                    for (final t in [
+                                      ...terms,
+                                      if (r.items.any(
+                                        (e) => e.school && itemTerm(e) == null,
+                                      ))
+                                        'undated',
+                                      'all',
+                                    ])
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 6,
+                                        ),
+                                        child: ChoiceChip(
+                                          label: Text(termLabel(t)),
+                                          selected: term == t,
+                                          onSelected: (_) => setState(() {
+                                            term = t;
+                                            subject = '';
+                                            final dates =
+                                                r.items
+                                                    .where(
+                                                      (e) =>
+                                                          inTerm(e, t) &&
+                                                          e.categoryId ==
+                                                              'course' &&
+                                                          e.start != null,
+                                                    )
+                                                    .map((e) => e.start!)
+                                                    .toList()
+                                                  ..sort();
+                                            if (t != academicTerm(now) &&
+                                                dates.isNotEmpty) {
+                                              day = dates.first;
+                                            } else if (t == academicTerm(now)) {
+                                              day = now;
+                                            }
+                                          }),
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
-                            ),
-                          );
-                        }),
-                      ),
-                    ],
-                  ),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: () => refresh(force: true),
-                    child: items.isEmpty
-                        ? ListView(
-                            children: const [
-                              Padding(
-                                padding: EdgeInsets.all(40),
-                                child: Text('暂无符合条件的事项。添加任务，或连接学校账号后同步。'),
+                            if (tab == 1)
+                              PlannerCalendar(
+                                day: day,
+                                items: filtered.toList(),
+                                onChanged: (date) => setState(() => day = date),
+                                onTimetable: () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => LargeTimetable(
+                                      items: filtered.toList(),
+                                      initialDay: day,
+                                      onTap: (item) =>
+                                          editItem(context, r, item),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ],
-                          )
-                        : ListView.builder(
-                            itemCount: items.length,
-                            padding: const EdgeInsets.only(bottom: 88),
-                            itemBuilder: (context, index) =>
-                                ItemTile(item: items[index], repo: r),
+                            if (warnings.isNotEmpty)
+                              NoticePanel(
+                                title: '有 ${warnings.length} 处安排需要调整',
+                                subtitle: warnings.first,
+                                icon: Icons.warning_amber,
+                                onTap: () => showDialog<void>(
+                                  context: context,
+                                  builder: (c) => AlertDialog(
+                                    title: const Text('日程变化'),
+                                    content: SingleChildScrollView(
+                                      child: Text(warnings.join('\n')),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(c),
+                                        child: const Text('知道了'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            if (errors > 0)
+                              NoticePanel(
+                                title: '部分学校数据未更新',
+                                subtitle: '继续使用本地记录，点此查看更新时间',
+                                icon: Icons.cloud_off_outlined,
+                                onTap: settings,
+                              ),
+                            if (filtersOpen)
+                              ExpansionTile(
+                                initiallyExpanded: true,
+                                tilePadding: EdgeInsets.zero,
+                                title: const Text('类别与学科筛选'),
+                                children: [
+                                  SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: [
+                                        _categoryChip('', '全部类别', v),
+                                        for (final c in ItemCategory.values)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              left: 8,
+                                            ),
+                                            child: _categoryChip(
+                                              c.id,
+                                              c.label,
+                                              v,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      Expanded(
+                                        child: DropdownButtonFormField<String>(
+                                          key: ValueKey(subject),
+                                          initialValue: subject,
+                                          isExpanded: true,
+                                          decoration: const InputDecoration(
+                                            labelText: '学科筛选',
+                                            contentPadding:
+                                                EdgeInsets.symmetric(
+                                                  horizontal: 14,
+                                                  vertical: 12,
+                                                ),
+                                          ),
+                                          items: [
+                                            const DropdownMenuItem(
+                                              value: '',
+                                              child: Text('全部学科'),
+                                            ),
+                                            ...subjects.map(
+                                              (s) => DropdownMenuItem(
+                                                value: s,
+                                                child: Text(
+                                                  s,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                          onChanged: (value) =>
+                                              setState(() => subject = value!),
+                                        ),
+                                      ),
+                                      if (tab == 2)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 8,
+                                          ),
+                                          child: FilterChip(
+                                            label: const Text('含已完成'),
+                                            selected: showCompleted,
+                                            onSelected: (value) => setState(
+                                              () => showCompleted = value,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                top: 20,
+                                bottom: 12,
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      tab == 1
+                                          ? '${day.month}月${day.day}日 · 星期${'一二三四五六日'[day.weekday - 1]}'
+                                          : tab == 2
+                                          ? '待办事项'
+                                          : '后续安排',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${items.length} 项',
+                                    style: instrumentText(color: v.muted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (items.isEmpty)
+                      SliverPadding(
+                        padding: EdgeInsets.symmetric(horizontal: pagePadding),
+                        sliver: SliverToBoxAdapter(
+                          child: EmptySignal(
+                            title: tab == 1 ? '当天没有日程' : '暂时没有符合条件的事项',
+                            description: tab == 1
+                                ? '换一天查看课表，或为自己添加一段安排。'
+                                : '添加任务，或调整类别与学科筛选。学校账号连接后可以同步课程和作业。',
+                            icon: tab == 1
+                                ? Icons.calendar_today_outlined
+                                : Icons.inventory_2_outlined,
+                            action: TextButton.icon(
+                              onPressed: () => editItem(context, r),
+                              icon: const Icon(Icons.add),
+                              label: const Text('添加事项'),
+                            ),
                           ),
-                  ),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: EdgeInsets.symmetric(horizontal: pagePadding),
+                        sliver: SliverList.builder(
+                          itemCount: items.length,
+                          itemBuilder: (context, index) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: ItemTile(
+                              item: items[index],
+                              repo: r,
+                              timeline: tab == 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 96)),
+                  ],
                 ),
-              ],
-            ),
+              ),
+      ),
       floatingActionButton: tab == 3
           ? null
           : FloatingActionButton(
@@ -430,351 +560,153 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
               tooltip: '添加事项',
               child: const Icon(Icons.add),
             ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
-        onDestinationSelected: (v) => setState(() => tab = v),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.schedule), label: '接下来'),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_view_week),
-            label: '课表',
-          ),
-          NavigationDestination(icon: Icon(Icons.checklist), label: '事项'),
-          NavigationDestination(
-            icon: Icon(Icons.auto_awesome_outlined),
-            label: 'Agent',
-          ),
-        ],
-      ),
+      bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
+          ? null
+          : PilotNavigation(
+              selected: tab,
+              onChanged: (value) => setState(() => tab = value),
+            ),
     );
   }
+
+  Widget _categoryChip(String id, String label, PilotVisuals v) => ChoiceChip(
+    label: Text(label),
+    selected: category == id,
+    labelStyle: v.cassette
+        ? TextStyle(
+            color: category == id ? (v.dark ? v.screen : Colors.white) : v.ink,
+            fontSize: 13,
+          )
+        : null,
+    selectedColor: v.cassette ? (v.dark ? v.accent : v.ink) : null,
+    onSelected: (_) => setState(() => category = id),
+  );
 }
 
 class ItemTile extends StatelessWidget {
   final Item item;
   final PlannerRepository repo;
-  const ItemTile({super.key, required this.item, required this.repo});
-  @override
-  Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-    child: ListTile(
-      onTap: () => editItem(context, repo, item),
-      title: Text(
-        item.title,
-        style: TextStyle(
-          decoration: item.completed ? TextDecoration.lineThrough : null,
-        ),
-      ),
-      leading: Text(item.category.label),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (item.subject.isNotEmpty && item.subject != item.title)
-            Text(item.subject),
-          if (item.timed)
-            Text('${localTime(item.start!)} – ${localTime(item.end!)}'),
-          if (item.deadline != null) Text('截止 ${localTime(item.deadline!)}'),
-          if (item.location.isNotEmpty) Text(item.location),
-          if (item.category.workload)
-            Text(
-              item.estimatedMinutes == null
-                  ? '预计用时待填写'
-                  : '预计 ${item.estimatedMinutes} 分钟',
-            ),
-          CountdownView(item: item),
-        ],
-      ),
-      trailing: item.categoryId == 'course'
-          ? null
-          : Checkbox(
-              value: item.completed,
-              onChanged: (v) async {
-                try {
-                  await repo.saveItem(item.patch({'completed': v}));
-                } catch (_) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('事项已更新，请重试')));
-                  }
-                }
-              },
-            ),
-    ),
-  );
-}
-
-class CountdownView extends StatefulWidget {
-  final Item item;
-  const CountdownView({super.key, required this.item});
-  @override
-  State<CountdownView> createState() => _CountdownViewState();
-}
-
-class _CountdownViewState extends State<CountdownView>
-    with WidgetsBindingObserver {
-  Timer? timer;
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    start();
-  }
-
-  void start() {
-    timer?.cancel();
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState s) {
-    if (s == AppLifecycleState.resumed) {
-      start();
-    } else {
-      timer?.cancel();
-    }
-  }
-
-  @override
-  void dispose() {
-    timer?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final item = widget.item;
-    final now = DateTime.now();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          countdown(item, now),
-          style: TextStyle(color: Theme.of(context).colorScheme.primary),
-        ),
-        if (item.timed && !now.isBefore(item.start!) && now.isBefore(item.end!))
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: LinearProgressIndicator(
-              value:
-                  now.difference(item.start!).inMilliseconds /
-                  item.end!.difference(item.start!).inMilliseconds,
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class PlannerSettings extends StatefulWidget {
-  final PlannerRepository repo;
-  final PlannerMcpServer mcp;
-  final String username, password, apiKey, model;
-  const PlannerSettings({
+  final bool timeline;
+  const ItemTile({
     super.key,
+    required this.item,
     required this.repo,
-    required this.mcp,
-    required this.username,
-    required this.password,
-    required this.apiKey,
-    required this.model,
+    this.timeline = false,
   });
   @override
-  State<PlannerSettings> createState() => _PlannerSettingsState();
-}
-
-class _PlannerSettingsState extends State<PlannerSettings> {
-  late final user = TextEditingController(text: widget.username),
-      pass = TextEditingController(text: widget.password),
-      keyField = TextEditingController(text: widget.apiKey),
-      modelField = TextEditingController(text: widget.model),
-      preferences = TextEditingController(text: widget.repo.preferences);
-  String? error;
-  bool saving = false;
-  @override
-  void initState() {
-    super.initState();
-    widget.mcp.addListener(_serverChanged);
-  }
-
-  void _serverChanged() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    widget.mcp.removeListener(_serverChanged);
-    for (final c in [user, pass, keyField, modelField, preferences]) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  Future<void> save() async {
-    setState(() => saving = true);
-    try {
-      if (user.text.trim().isNotEmpty && !user.text.trim().startsWith('3')) {
-        throw const FormatException('当前仅支持本科生账号');
-      }
-      if (user.text.trim().isNotEmpty && pass.text.isEmpty) {
-        throw const FormatException('请填写统一认证密码');
-      }
-      for (final e in {
-        'planner_username': user.text.trim(),
-        'planner_password': pass.text,
-        'planner_deepseek_key': keyField.text.trim(),
-        'planner_model': modelField.text.trim().isEmpty
-            ? 'deepseek-flash'
-            : modelField.text.trim(),
-      }.entries) {
-        await secureStore.write(key: e.key, value: e.value);
-      }
-      await widget.repo.setPreferences(preferences.text);
-      if (mounted) {
-        Navigator.pop(
-          context,
-          user.text.trim() != widget.username || pass.text != widget.password,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(
-          () => error = e is FormatException ? e.message.toString() : '保存设置失败',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('设置')),
-    body: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        const Text(
-          '本科生账号',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        TextField(
-          controller: user,
-          decoration: const InputDecoration(labelText: '学号（留空使用本地模式）'),
-        ),
-        TextField(
-          controller: pass,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: '统一认证密码'),
-        ),
-        const SizedBox(height: 24),
-        const Text(
-          'DeepSeek',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        const Text(
-          '发送对话时将日程、任务、备注和明确填写的偏好发送至 DeepSeek。学号密码不会发送给模型；API Key 保存在本机安全存储。',
-        ),
-        TextField(
-          controller: keyField,
-          obscureText: true,
-          enableSuggestions: false,
-          autocorrect: false,
-          decoration: const InputDecoration(labelText: '自己的 API Key'),
-        ),
-        TextField(
-          controller: modelField,
-          decoration: const InputDecoration(labelText: '模型 ID'),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: preferences,
-          maxLength: 6000,
-          minLines: 3,
-          maxLines: 8,
-          decoration: const InputDecoration(
-            labelText: '长期偏好（仅你明确填写的内容）',
-            hintText: '例如：23点前休息，下午适合集中学习',
-          ),
-        ),
-        TextButton(
-          onPressed: () => preferences.clear(),
-          child: const Text('清空长期偏好（保存后生效）'),
-        ),
-        if (error != null) Text(error!),
-        FilledButton(
-          onPressed: saving ? null : save,
-          child: const Text('保存设置'),
-        ),
-        const Divider(height: 40),
-        const Text(
-          '学校数据状态',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        if (widget.repo.syncStatus.isEmpty) const Text('尚未同步'),
-        for (final e in widget.repo.syncStatus.entries)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(e.key),
-            subtitle: Text(
-              '最近成功：${e.value['updatedAt'] ?? '无'}\n${e.value['error'] ?? '已更新'}',
-            ),
-          ),
-        const Divider(height: 40),
-        const Text(
-          'MCP 服务器',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        const Text('仅在前台运行，离开 App 后停止。授权客户端可读取日程并提交方案；写入仍需你在 App 中确认。'),
-        FilledButton.tonal(
-          onPressed: (!mcpExecutionEnabled || widget.mcp.starting)
-              ? null
-              : () async {
-                  try {
-                    if (widget.mcp.running) {
-                      await widget.mcp.stop();
-                    } else {
-                      await widget.mcp.start();
-                    }
-                    if (mounted) setState(() {});
-                  } catch (_) {
-                    if (mounted) setState(() => error = 'MCP 启动失败，端口可能已占用');
-                  }
-                },
-          child: Text(
-            !mcpExecutionEnabled
-                ? 'MCP 接入开发已暂停'
-                : widget.mcp.running
-                ? '停止 MCP'
-                : '启动 MCP',
-          ),
-        ),
-        if (widget.mcp.running) ...[
-          SelectableText('http://127.0.0.1:${widget.mcp.port}/mcp'),
-          TextButton(
-            onPressed: () =>
-                Clipboard.setData(ClipboardData(text: widget.mcp.token!)),
-            child: const Text('复制本次 Bearer 令牌'),
-          ),
-        ],
-        TextButton(
-          onPressed: () async {
-            await Clipboard.setData(
-              ClipboardData(
-                text: const JsonEncoder.withIndent(
-                  '  ',
-                ).convert(PlannerTools(widget.repo).context()),
+  Widget build(BuildContext context) {
+    final v = PilotVisuals.of(context), color = courseColor(item);
+    return Material(
+      color: v.surface,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => editItem(context, repo, item),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 7, right: 10),
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      item.title,
+                      style: TextStyle(
+                        fontSize: 19,
+                        height: 1.35,
+                        fontWeight: FontWeight.w700,
+                        color: item.completed ? v.muted : v.ink,
+                        decoration: item.completed
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                  ),
+                  if (item.categoryId != 'course')
+                    Checkbox(
+                      semanticLabel: '完成 ${item.title}',
+                      value: item.completed,
+                      onChanged: (value) async {
+                        try {
+                          await repo.saveItem(item.patch({'completed': value}));
+                        } catch (_) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('事项已更新，请重试')),
+                            );
+                          }
+                        }
+                      },
+                    )
+                  else
+                    Icon(Icons.chevron_right, color: v.muted, size: 20),
+                ],
               ),
-            );
-            if (context.mounted) {
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('日程 JSON 已复制')));
-            }
-          },
-          child: const Text('复制当前日程 JSON'),
+              const SizedBox(height: 8),
+              if (item.timed)
+                _line(
+                  v,
+                  Icons.schedule,
+                  '${localTime(item.start!)} – ${localTime(item.end!).split(' ').last}',
+                ),
+              if (item.deadline != null)
+                _line(
+                  v,
+                  Icons.flag_outlined,
+                  '截止 ${localTime(item.deadline!)}',
+                ),
+              if (item.location.isNotEmpty)
+                _line(v, Icons.place_outlined, item.location),
+              if (item.subject.isNotEmpty && item.subject != item.title)
+                _line(v, Icons.book_outlined, item.subject),
+              if (item.category.workload || item.categoryId == 'exam')
+                _line(
+                  v,
+                  Icons.timelapse,
+                  item.estimatedMinutes == null
+                      ? '预计用时待填写'
+                      : '预计 ${item.estimatedMinutes} 分钟',
+                ),
+              if (!timeline)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: CountdownView(item: item),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _line(PilotVisuals v, IconData icon, String text) => Padding(
+    padding: const EdgeInsets.only(top: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Icon(icon, size: 16, color: v.muted),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(color: v.muted, fontSize: 14, height: 1.4),
+          ),
         ),
       ],
     ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
@@ -26,33 +27,49 @@ class RedirectClient implements HttpClient {
 }
 
 void main() {
-  test('真实 HTTP 格式携带工具与 Bearer，读取 assistant 回复', () async {
+  test('真实 HTTP SSE 携带工具与 Bearer，在请求结束前收到增量', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() => server.close(force: true));
+    final first = Completer<void>(), finish = Completer<void>();
+    final parts = <String>[];
     server.listen((request) async {
       expect(request.headers.value('authorization'), 'Bearer local-test-key');
       final data = jsonDecode(await utf8.decoder.bind(request).join());
       expect(data['thinking']['type'], 'disabled');
+      expect(data['stream'], true);
       expect(data['model'], 'deepseek-flash');
       expect(data['tools'], hasLength(1));
-      request.response.headers.contentType = ContentType.json;
-      request.response.write(
-        jsonEncode({
-          'choices': [
-            {
-              'finish_reason': 'stop',
-              'message': {'role': 'assistant', 'content': '测试回复'},
-            },
-          ],
-        }),
+      request.response.headers.contentType = ContentType(
+        'text',
+        'event-stream',
+        charset: 'utf-8',
       );
+      request.response.bufferOutput = false;
+      void emit(Map<String, dynamic> delta, {String? reason}) =>
+          request.response.write(
+            'data: ${jsonEncode({
+              'choices': [
+                {'delta': delta, 'finish_reason': reason},
+              ],
+            })}\n\n',
+          );
+      emit({'role': 'assistant', 'content': '测试'});
+      await request.response.flush();
+      await finish.future;
+      emit({'content': '回复'});
+      emit({}, reason: 'stop');
+      request.response.write('data: [DONE]\n\n');
       await request.response.close();
     });
     final client = DeepSeekClient(
       clientFactory: () =>
           RedirectClient(Uri.parse('http://127.0.0.1:${server.port}/chat')),
     );
-    final result = await client.complete(
+    final pending = client.completeStreaming(
+      onTextDelta: (delta) {
+        parts.add(delta);
+        if (!first.isCompleted) first.complete();
+      },
       apiKey: 'local-test-key',
       model: 'deepseek-flash',
       messages: [
@@ -68,6 +85,11 @@ void main() {
         },
       ],
     );
+    await first.future.timeout(const Duration(seconds: 5));
+    expect(parts, ['测试']);
+    finish.complete();
+    final result = await pending;
+    expect(parts, ['测试', '回复']);
     expect(result['content'], '测试回复');
   });
   for (final code in [401, 402, 429, 500]) {

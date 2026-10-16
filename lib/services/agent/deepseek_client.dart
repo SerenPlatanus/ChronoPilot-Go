@@ -12,6 +12,17 @@ abstract class AgentCompletionClient {
   void cancel();
 }
 
+/// Streaming is optional for injected/offline clients; production uses SSE.
+abstract class AgentStreamingClient implements AgentCompletionClient {
+  Future<Map<String, dynamic>> completeStreaming({
+    required String apiKey,
+    required String model,
+    required List<Map<String, dynamic>> messages,
+    required List<Map<String, dynamic>> tools,
+    required void Function(String delta) onTextDelta,
+  });
+}
+
 class AgentApiException implements Exception {
   final String message;
   const AgentApiException(this.message);
@@ -19,7 +30,7 @@ class AgentApiException implements Exception {
   String toString() => message;
 }
 
-class DeepSeekClient implements AgentCompletionClient {
+class DeepSeekClient implements AgentStreamingClient {
   HttpClient? _active;
   final HttpClient Function() _factory;
   DeepSeekClient({HttpClient Function()? clientFactory})
@@ -33,6 +44,21 @@ class DeepSeekClient implements AgentCompletionClient {
     required String model,
     required List<Map<String, dynamic>> messages,
     required List<Map<String, dynamic>> tools,
+  }) => completeStreaming(
+    apiKey: apiKey,
+    model: model,
+    messages: messages,
+    tools: tools,
+    onTextDelta: (_) {},
+  );
+
+  @override
+  Future<Map<String, dynamic>> completeStreaming({
+    required String apiKey,
+    required String model,
+    required List<Map<String, dynamic>> messages,
+    required List<Map<String, dynamic>> tools,
+    required void Function(String delta) onTextDelta,
   }) async {
     final client = _factory()..connectionTimeout = const Duration(seconds: 15);
     _active = client;
@@ -48,7 +74,7 @@ class DeepSeekClient implements AgentCompletionClient {
             'messages': messages,
             'tools': tools,
             'tool_choice': 'auto',
-            'stream': false,
+            'stream': true,
             'thinking': {'type': 'disabled'},
             'max_tokens': 4096,
           }),
@@ -64,21 +90,7 @@ class DeepSeekClient implements AgentCompletionClient {
             _ => 'DeepSeek 服务暂不可用（HTTP ${response.statusCode}）。',
           });
         }
-        final bytes = <int>[];
-        await for (final chunk in response) {
-          bytes.addAll(chunk);
-          if (bytes.length > 2 * 1024 * 1024) {
-            throw const AgentApiException('模型响应过大，请缩小规划范围。');
-          }
-        }
-        final body = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-        final choice = (body['choices'] as List).first as Map<String, dynamic>;
-        if (choice['finish_reason'] == 'length') {
-          throw const AgentApiException('方案过长被截断，请缩小规划范围后重试。');
-        }
-        final message = Map<String, dynamic>.from(choice['message'] as Map);
-        if (message['role'] != 'assistant') throw const FormatException();
-        return message;
+        return readDeepSeekStream(response, onTextDelta: onTextDelta);
       })().timeout(const Duration(seconds: 90));
     } on AgentApiException {
       rethrow;
@@ -99,4 +111,111 @@ class DeepSeekClient implements AgentCompletionClient {
     _active?.close(force: true);
     _active = null;
   }
+}
+
+/// Consumes SSE frames across arbitrary UTF-8/network boundaries. Tool argument
+/// fragments are assembled before returning; no partial tool is executable.
+Future<Map<String, dynamic>> readDeepSeekStream(
+  Stream<List<int>> source, {
+  required void Function(String delta) onTextDelta,
+}) async {
+  final text = StringBuffer(), calls = <int, Map<String, dynamic>>{};
+  final data = <String>[];
+  var bytes = 0, done = false;
+  String? finish;
+  final bounded = source.map((chunk) {
+    bytes += chunk.length;
+    if (bytes > 2 * 1024 * 1024) {
+      throw const AgentApiException('模型响应过大，请缩小规划范围。');
+    }
+    return chunk;
+  });
+  void event() {
+    if (data.isEmpty) return;
+    final payload = data.join('\n');
+    data.clear();
+    if (payload == '[DONE]') {
+      done = true;
+      return;
+    }
+    final body = jsonDecode(payload) as Map<String, dynamic>;
+    if (body.containsKey('error')) throw const AgentApiException('模型响应中断，请重试。');
+    final choices = body['choices'] as List? ?? [];
+    if (choices.isEmpty) return;
+    final choice = choices.first as Map;
+    final delta = choice['delta'] as Map? ?? {};
+    if (delta['role'] != null && delta['role'] != 'assistant') {
+      throw const FormatException();
+    }
+    final content = delta['content'] as String?;
+    if (content != null && content.isNotEmpty) {
+      text.write(content);
+      onTextDelta(content);
+    }
+    for (final raw in delta['tool_calls'] as List? ?? []) {
+      final part = raw as Map, index = part['index'];
+      if (index is! int || index < 0 || index >= 8) {
+        throw const AgentApiException('模型工具调用过多或格式异常。');
+      }
+      final call = calls.putIfAbsent(
+        index,
+        () => {
+          'id': '',
+          'type': 'function',
+          'function': {'name': '', 'arguments': ''},
+        },
+      );
+      if (part['id'] != null) {
+        call['id'] = '${call['id']}${part['id'] as String}';
+      }
+      if (part['type'] != null && part['type'] != 'function') {
+        throw const FormatException();
+      }
+      final fn = part['function'] as Map? ?? {};
+      final assembled = call['function'] as Map;
+      for (final key in ['name', 'arguments']) {
+        if (fn[key] != null) {
+          assembled[key] = '${assembled[key]}${fn[key] as String}';
+        }
+      }
+    }
+    if (choice['finish_reason'] != null) {
+      finish = choice['finish_reason'] as String;
+    }
+  }
+
+  await for (final line
+      in bounded.transform(utf8.decoder).transform(const LineSplitter())) {
+    if (line.isEmpty) {
+      event();
+      if (done) break;
+    } else if (line.startsWith('data:')) {
+      data.add(line.substring(5).trimLeft());
+    }
+  }
+  if (!done) event();
+  if (!done || finish == null) {
+    throw const AgentApiException('回复连接中断，请重试；未写入日程。');
+  }
+  if (finish == 'length') throw const AgentApiException('方案过长被截断，请缩小规划范围后重试。');
+  if (finish != 'stop' && finish != 'tool_calls') {
+    throw const AgentApiException('模型未完整返回回复，请重试。');
+  }
+  final ordered = calls.entries.toList()
+    ..sort((a, b) => a.key.compareTo(b.key));
+  if ((finish == 'tool_calls') != ordered.isNotEmpty) {
+    throw const FormatException();
+  }
+  for (final entry in ordered) {
+    final call = entry.value;
+    if ((call['id'] as String).isEmpty ||
+        ((call['function'] as Map)['name'] as String).isEmpty) {
+      throw const FormatException();
+    }
+  }
+  return {
+    'role': 'assistant',
+    'content': text.toString(),
+    if (ordered.isNotEmpty) 'tool_calls': ordered.map((e) => e.value).toList(),
+  };
 }

@@ -888,3 +888,13 @@ DerivedData/
 !**/ios/**/default.pbxuser
 !**/ios/**/default.perspectivev3
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
+
+### ChronoPilot-Go 本地约定
+
+# 界面预览图由 test/style_test.dart 的 shot() 生成，可随时重跑，不纳入版本管理，
+# 避免每次改样式都往历史里塞一份 1.6MB 的 PNG。
+/docs/ui-previews/
+
+# 本项目是应用而不是库：提交 lock 文件以锁定依赖版本，保证本地与 CI
+# 解析出同一套依赖。此规则覆盖上文拼接模板中的 pubspec.lock。
+!pubspec.lock

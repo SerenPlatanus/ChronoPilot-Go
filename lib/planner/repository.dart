@@ -203,7 +203,11 @@ class PlannerRepository extends ChangeNotifier implements PlannerDataApi {
         final sessions = state['sessions'] as List;
         final index = sessions.indexWhere((e) => e['id'] == session['id']);
         if (index < 0) {
-          sessions.insert(0, session);
+          sessions.insert(0, {
+            ...session,
+            'createdAt': session['createdAt'] ?? timestamp(DateTime.now()),
+            'updatedAt': session['updatedAt'] ?? timestamp(DateTime.now()),
+          });
         } else {
           sessions[index] = session;
         }
@@ -236,6 +240,7 @@ class PlannerRepository extends ChangeNotifier implements PlannerDataApi {
       }
     }
     history.addAll(messages);
+    session['updatedAt'] = timestamp(DateTime.now());
   });
   Future<void> renameSession(String id, String title) => transaction((state) {
     if (title.trim().isEmpty || title.length > 60) {

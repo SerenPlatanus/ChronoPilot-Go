@@ -23,7 +23,7 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace 'xyz.nosig.celechron'
+    namespace 'app.chronopilot.go'
     compileSdkVersion flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
@@ -43,7 +43,7 @@ android {
 
     defaultConfig {
         multiDexEnabled true
-        applicationId "xyz.nosig.celechron"
+        applicationId "app.chronopilot.go"
         minSdkVersion 28
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()

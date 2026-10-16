@@ -1,0 +1,5 @@
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="14dp" android:insetTop="14dp"
+    android:insetRight="14dp" android:insetBottom="14dp">
+    <bitmap android:src="@drawable/launcher_generated" android:gravity="fill" android:filter="true" />
+</inset>

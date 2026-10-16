@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="shadow" gradientUnits="userSpaceOnUse" cx="153" cy="128" r="76">
+      <stop offset="0" stop-color="#08090b"/><stop offset=".66" stop-color="#111316"/>
+      <stop offset=".86" stop-color="#3b4149"/><stop offset=".96" stop-color="#9aa0a8"/><stop offset="1" stop-color="#eef0f2"/>
+    </radialGradient>
+    <linearGradient id="light" gradientUnits="userSpaceOnUse" x1="80" y1="64" x2="126" y2="202">
+      <stop stop-color="#ffffff"/><stop offset=".55" stop-color="#f6f7f8"/><stop offset="1" stop-color="#dce1e6"/>
+    </linearGradient>
+    <linearGradient id="hand" gradientUnits="userSpaceOnUse" x1="128" y1="128" x2="195" y2="128">
+      <stop stop-color="#eef1f4"/><stop offset="1" stop-color="#a3abb5"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#92959b"/>
+  <circle cx="128" cy="128" r="76" fill="url(#shadow)"/>
+  <path d="M140.5,53.035 A76,76 0 1 0 140.5,202.965 A76,76 0 0 1 140.5,53.035 Z" fill="url(#light)"/>
+  <path d="M128,128 H195" stroke="url(#hand)" stroke-width="4.6" stroke-linecap="round" fill="none"/>
+  <circle cx="128" cy="128" r="2.9" fill="#ffffff"/>
+</svg>

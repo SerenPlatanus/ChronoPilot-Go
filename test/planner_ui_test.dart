@@ -31,8 +31,8 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text('高等数学'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.calendar_view_week));
+    expect(find.text('高等数学'), findsWidgets);
+    await tester.tap(find.byIcon(Icons.calendar_month_outlined));
     await tester.pumpAndSettle();
     expect(find.text('课表与日程'), findsOneWidget);
     await tester.tap(find.byIcon(Icons.checklist));
@@ -40,10 +40,18 @@ void main() {
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, '名称'), '线性代数练习');
+    tester.binding.focusManager.primaryFocus?.unfocus();
+    tester.testTextInput.hide();
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.text('保存'),
+      find.text('保存').hitTestable(),
       300,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('item-editor-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
