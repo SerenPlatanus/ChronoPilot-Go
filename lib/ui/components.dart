@@ -1,5 +1,5 @@
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter, PointMode;
+import 'dart:ui' show PointMode;
 import 'package:flutter/material.dart';
 import '../planner/item.dart';
 import 'styles.dart';
@@ -62,11 +62,8 @@ class SurfacePanel extends StatelessWidget {
     final v = PilotVisuals.of(context);
     return Container(
       padding: padding,
-      decoration: BoxDecoration(
-        color: color ?? v.surface,
-        borderRadius: BorderRadius.circular(v.radius),
-        border: Border.all(color: v.line),
-      ),
+      decoration: v.decoration('card', fill: color),
+      clipBehavior: Clip.antiAlias,
       child: child,
     );
   }
@@ -210,28 +207,7 @@ class GlassControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final v = PilotVisuals.of(context);
     if (!v.cassette) return child;
-    final opaque =
-        MediaQuery.highContrastOf(context) ||
-        MediaQuery.disableAnimationsOf(context);
-    final surface = DecoratedBox(
-      decoration: BoxDecoration(
-        color: v.surface.withValues(alpha: opaque ? 1 : .93),
-        border: Border.all(
-          color: v.dark ? v.line : Colors.white.withValues(alpha: .9),
-        ),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: child,
-    );
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: opaque
-          ? surface
-          : BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: surface,
-            ),
-    );
+    return DecoratedBox(decoration: v.decoration('glass'), child: child);
   }
 }
 

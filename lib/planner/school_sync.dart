@@ -19,6 +19,13 @@ class SchoolSync implements SchoolDataApi {
   final String username, password;
   Future<void>? _flight;
   DateTime? _lastAttempt;
+  static const refreshInterval = Duration(minutes: 2);
+  bool get shouldRefresh =>
+      !_disposed &&
+      username.isNotEmpty &&
+      password.isNotEmpty &&
+      (_lastAttempt == null ||
+          DateTime.now().difference(_lastAttempt!) >= refreshInterval);
   @override
   bool get busy => _flight != null;
   bool _disposed = false;
@@ -38,8 +45,7 @@ class SchoolSync implements SchoolDataApi {
         password.isEmpty ||
         (!force &&
             _lastAttempt != null &&
-            DateTime.now().difference(_lastAttempt!) <
-                const Duration(minutes: 15))) {
+            DateTime.now().difference(_lastAttempt!) < refreshInterval)) {
       return Future.value();
     }
     _lastAttempt = DateTime.now();

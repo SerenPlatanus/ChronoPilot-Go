@@ -1,3 +1,4 @@
+import '../ui/controls.dart';
 import '../ui/agent_markdown.dart';
 import 'package:flutter/material.dart';
 import 'chat_controller.dart';
@@ -82,6 +83,48 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
     }
   }
 
+  bool historyOpen = false;
+  double historyDrag = 0;
+  void closeHistory() {
+    if (historyOpen && mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+
+  Future<void> openHistory() async {
+    if (historyOpen) return;
+    historyOpen = true;
+    try {
+      await showGeneralDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: '关闭对话列表',
+        transitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) => Align(
+          alignment: Alignment.centerLeft,
+          child: GestureDetector(
+            onHorizontalDragEnd: (details) {
+              if ((details.primaryVelocity ?? 0) < -150) closeHistory();
+            },
+            child: ListenableBuilder(
+              listenable: widget.chat,
+              builder: (_, __) => SessionDrawer(
+                sessions: widget.chat.repo.sessions,
+                selected: selected,
+                busy: widget.chat.busy,
+                onNew: () => newSession(closeDrawer: true),
+                onSelected: selectSession,
+                onManage: manageSession,
+              ),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      historyOpen = false;
+    }
+  }
+
   final scaffold = GlobalKey<ScaffoldState>();
   final drafts = <String, String>{};
   void selectSession(String id) {
@@ -91,7 +134,7 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
       error = null;
       input.text = drafts[id] ?? "";
     });
-    scaffold.currentState?.closeDrawer();
+    closeHistory();
   }
 
   Future<void> newSession({bool closeDrawer = false}) async {
@@ -104,31 +147,40 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
         error = null;
         input.clear();
       });
-      if (closeDrawer) scaffold.currentState?.closeDrawer();
+      if (closeDrawer) closeHistory();
     } catch (_) {
       if (mounted) setState(() => error = '无法创建会话，请重试');
     }
   }
 
   Future<void> manageSession(String id, String action) async {
-    scaffold.currentState?.closeDrawer();
+    closeHistory();
     final current = widget.chat.session(id);
     if (current == null) return;
     try {
       if (action == 'delete') {
         final yes = await showDialog<bool>(
+          animationStyle: AnimationStyle.noAnimation,
           context: context,
           builder: (c) => AlertDialog(
             title: const Text('删除整个会话？'),
             content: const Text('删除历史消息和未确认方案，已写入的日程保留。'),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(c, false),
-                child: const Text('取消'),
+              PilotControl(
+                className: 'chat-delete-cancel',
+                kind: 'text-button',
+                child: TextButton(
+                  onPressed: () => Navigator.pop(c, false),
+                  child: const Text('取消'),
+                ),
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(c, true),
-                child: const Text('删除'),
+              PilotControl(
+                className: 'chat-delete-confirm',
+                kind: 'text-button',
+                child: TextButton(
+                  onPressed: () => Navigator.pop(c, true),
+                  child: const Text('删除'),
+                ),
               ),
             ],
           ),
@@ -136,6 +188,7 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
         if (yes == true) await widget.chat.repo.deleteSession(id);
       } else {
         final name = await showDialog<String>(
+          animationStyle: AnimationStyle.noAnimation,
           context: context,
           builder: (_) => _SessionNameDialog(
             initialName: current['title'] as String? ?? '',
@@ -190,202 +243,257 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
       });
     }
     final busy = sending || widget.chat.busy, v = PilotVisuals.of(context);
-    return Scaffold(
-      key: scaffold,
-      backgroundColor: Colors.transparent,
-      drawer: SessionDrawer(
-        sessions: sessions,
-        selected: selected,
-        busy: busy,
-        onNew: () => newSession(closeDrawer: true),
-        onSelected: selectSession,
-        onManage: manageSession,
-      ),
-      appBar: AppBar(
-        toolbarHeight: 56,
-        centerTitle: true,
-        leading: IconButton(
-          tooltip: '历史对话',
-          icon: const Icon(Icons.menu),
-          onPressed: () => scaffold.currentState?.openDrawer(),
-        ),
-        title: Text(
-          current?['title'] as String? ?? '新对话',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-        ),
-        actions: [
-          IconButton(
-            tooltip: '新会话',
-            onPressed: busy ? null : () => newSession(),
-            icon: const Icon(Icons.add_comment_outlined),
-          ),
-          IconButton(
-            tooltip: '设置',
-            onPressed: widget.onSettings,
-            icon: const Icon(Icons.settings_outlined),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (!agentExecutionEnabled)
-            const ListTile(title: Text('Agent 接入开发已暂停')),
-          Expanded(
-            child: messages.isEmpty
-                ? Center(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const EclipseMark(size: 60),
-                          const SizedBox(height: 24),
-                          Text(
-                            '今天想安排什么？',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: v.ink,
-                              fontSize: 23,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    controller: scroll,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 16,
-                    ),
-                    itemCount: messages.length,
-                    itemBuilder: (context, i) {
-                      final message = messages[i] as Map,
-                          draft = message['draft'],
-                          user = message['role'] == 'user';
-                      final content = Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          AgentMarkdown(
-                            data: message['content'] as String? ?? '',
-                          ),
-                          if (draft is Map)
-                            DraftCard(
-                              key: ValueKey(draft['draftId']),
-                              tools: widget.chat.tools,
-                              draft: Map<String, dynamic>.from(draft),
-                              sessionId: selected!,
-                              status:
-                                  message['draftStatus'] as String? ??
-                                  (message['applied'] == true
-                                      ? 'applied'
-                                      : null),
-                              busy: busy,
-                            ),
-                        ],
-                      );
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 20),
-                        child: user
-                            ? Align(
-                                alignment: Alignment.centerRight,
-                                child: Container(
-                                  constraints: BoxConstraints(
-                                    maxWidth:
-                                        MediaQuery.sizeOf(context).width * .84,
-                                  ),
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    12,
-                                    12,
-                                    0,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: v.surface,
-                                    borderRadius: BorderRadius.circular(18),
-                                  ),
-                                  child: content,
-                                ),
-                              )
-                            : content,
-                      );
-                    },
-                  ),
-          ),
-          if (busy) ...[
-            const LinearProgressIndicator(),
-            TextButton.icon(
-              onPressed: widget.chat.cancel,
-              icon: const Icon(Icons.stop_circle_outlined),
-              label: const Text('取消本次请求'),
-            ),
-          ],
-          if (!busy &&
-              widget.chat.error != null &&
-              selected != null &&
-              messages.isNotEmpty &&
-              messages.last['role'] == 'user')
-            TextButton(
-              onPressed: () =>
-                  widget.chat.retry(selected!, widget.apiKey, widget.model),
-              child: const Text('重试上一条'),
-            ),
-          if (error != null || widget.chat.error != null)
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                error ?? widget.chat.error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+    return Stack(
+      children: [
+        Scaffold(
+          key: scaffold,
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            toolbarHeight: 56,
+            centerTitle: true,
+            leading: PilotControl(
+              className: 'chat-history',
+              kind: 'icon-button',
+              child: IconButton(
+                style: const ButtonStyle(
+                  side: WidgetStatePropertyAll(BorderSide.none),
+                ),
+                tooltip: '历史对话',
+                icon: const Icon(Icons.menu),
+                onPressed: openHistory,
               ),
             ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
-                decoration: BoxDecoration(
-                  color: v.surface,
-                  borderRadius: BorderRadius.circular(26),
-                  border: Border.all(color: v.line),
+            title: Text(
+              current?['title'] as String? ?? '新对话',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            actions: [
+              PilotControl(
+                className: 'chat-new',
+                kind: 'icon-button',
+                child: IconButton(
+                  style: const ButtonStyle(
+                    side: WidgetStatePropertyAll(BorderSide.none),
+                  ),
+                  tooltip: '新会话',
+                  onPressed: busy ? null : () => newSession(),
+                  icon: const Icon(Icons.add_comment_outlined),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: input,
-                        minLines: 1,
-                        maxLines: 5,
-                        decoration: const InputDecoration(
-                          hintText: '发送消息',
-                          filled: false,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(
-                            vertical: 12,
-                            horizontal: 4,
+              ),
+              PilotControl(
+                className: 'agent-settings',
+                kind: 'icon-button',
+                child: IconButton(
+                  style: const ButtonStyle(
+                    side: WidgetStatePropertyAll(BorderSide.none),
+                  ),
+                  tooltip: '设置',
+                  onPressed: widget.onSettings,
+                  icon: const Icon(Icons.settings_outlined),
+                ),
+              ),
+            ],
+          ),
+          body: Column(
+            children: [
+              if (!agentExecutionEnabled)
+                const ListTile(title: Text('Agent 接入开发已暂停')),
+              Expanded(
+                child: messages.isEmpty
+                    ? Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const EclipseMark(size: 60),
+                              const SizedBox(height: 24),
+                              Text(
+                                '今天想安排什么？',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: v.ink,
+                                  fontSize: 23,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+                      )
+                    : ListView.builder(
+                        controller: scroll,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 16,
+                        ),
+                        itemCount: messages.length,
+                        itemBuilder: (context, i) {
+                          final message = messages[i] as Map,
+                              draft = message['draft'],
+                              user = message['role'] == 'user';
+                          final content = Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              AgentMarkdown(
+                                data: message['content'] as String? ?? '',
+                              ),
+                              if (draft is Map)
+                                DraftCard(
+                                  key: ValueKey(draft['draftId']),
+                                  tools: widget.chat.tools,
+                                  draft: Map<String, dynamic>.from(draft),
+                                  sessionId: selected!,
+                                  status:
+                                      message['draftStatus'] as String? ??
+                                      (message['applied'] == true
+                                          ? 'applied'
+                                          : null),
+                                  busy: busy,
+                                ),
+                            ],
+                          );
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 20),
+                            child: user
+                                ? Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Container(
+                                      constraints: BoxConstraints(
+                                        maxWidth:
+                                            MediaQuery.sizeOf(context).width *
+                                            .84,
+                                      ),
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        12,
+                                        12,
+                                        0,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: v.surface,
+                                        borderRadius: BorderRadius.circular(
+                                          v.tokens?.controls.isNotEmpty == true
+                                              ? v.radius
+                                              : 18,
+                                        ),
+                                      ),
+                                      child: content,
+                                    ),
+                                  )
+                                : content,
+                          );
+                        },
                       ),
+              ),
+              if (busy) ...[
+                const Padding(padding: EdgeInsets.all(8), child: Text('正在生成…')),
+                PilotControl(
+                  className: 'agent-stop',
+                  kind: 'text-button',
+                  child: TextButton.icon(
+                    onPressed: widget.chat.cancel,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    label: const Text('取消本次请求'),
+                  ),
+                ),
+              ],
+              if (!busy &&
+                  widget.chat.error != null &&
+                  selected != null &&
+                  messages.isNotEmpty &&
+                  messages.last['role'] == 'user')
+                PilotControl(
+                  className: 'agent-retry',
+                  kind: 'text-button',
+                  child: TextButton(
+                    onPressed: () => widget.chat.retry(
+                      selected!,
+                      widget.apiKey,
+                      widget.model,
                     ),
-                    const SizedBox(width: 6),
-                    IconButton.filled(
-                      onPressed: !agentExecutionEnabled || busy ? null : send,
-                      icon: const Icon(Icons.send),
-                      tooltip: '发送',
+                    child: const Text('重试上一条'),
+                  ),
+                ),
+              if (error != null || widget.chat.error != null)
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(
+                    error ?? widget.chat.error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
                     ),
-                  ],
+                  ),
+                ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+                    decoration: v.decoration('composer', defaultRadius: 26),
+                    clipBehavior: Clip.antiAlias,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: input,
+                            minLines: 1,
+                            maxLines: 5,
+                            decoration: const InputDecoration(
+                              hintText: '发送消息',
+                              filled: false,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 4,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        PilotControl(
+                          className: 'agent-send',
+                          kind: 'icon-button',
+                          child: IconButton.filled(
+                            onPressed: !agentExecutionEnabled || busy
+                                ? null
+                                : send,
+                            icon: const Icon(Icons.send),
+                            tooltip: '发送',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+        Positioned(
+          left: 0,
+          top: 56,
+          bottom: 0,
+          width: 20,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: (_) => historyDrag = 0,
+            onHorizontalDragUpdate: (details) =>
+                historyDrag += details.delta.dx,
+            onHorizontalDragEnd: (details) {
+              if (historyDrag > 48 || (details.primaryVelocity ?? 0) > 150) {
+                openHistory();
+              }
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -410,13 +518,21 @@ class _SessionNameDialogState extends State<_SessionNameDialog> {
     title: const Text('重命名会话'),
     content: TextField(controller: editor, maxLength: 60, autofocus: true),
     actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('取消'),
+      PilotControl(
+        className: 'chat-rename-cancel',
+        kind: 'text-button',
+        child: TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
       ),
-      TextButton(
-        onPressed: () => Navigator.pop(context, editor.text.trim()),
-        child: const Text('保存'),
+      PilotControl(
+        className: 'chat-rename-save',
+        kind: 'text-button',
+        child: TextButton(
+          onPressed: () => Navigator.pop(context, editor.text.trim()),
+          child: const Text('保存'),
+        ),
       ),
     ],
   );

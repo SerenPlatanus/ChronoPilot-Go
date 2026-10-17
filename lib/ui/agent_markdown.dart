@@ -1,3 +1,4 @@
+import 'controls.dart';
 import 'math_markdown.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -48,21 +49,30 @@ class AgentMarkdown extends StatelessWidget {
           onTapLink: (text, href, title) {
             if (href == null) return;
             showDialog<void>(
+              animationStyle: AnimationStyle.noAnimation,
               context: context,
               builder: (c) => AlertDialog(
                 title: Text(text),
                 content: SelectableText(href),
                 actions: [
-                  TextButton(
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: href));
-                      if (c.mounted) Navigator.pop(c);
-                    },
-                    child: const Text('复制链接'),
+                  PilotControl(
+                    className: 'link-copy',
+                    kind: 'text-button',
+                    child: TextButton(
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: href));
+                        if (c.mounted) Navigator.pop(c);
+                      },
+                      child: const Text('复制链接'),
+                    ),
                   ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(c),
-                    child: const Text('关闭'),
+                  PilotControl(
+                    className: 'link-close',
+                    kind: 'text-button',
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(c),
+                      child: const Text('关闭'),
+                    ),
                   ),
                 ],
               ),
@@ -71,18 +81,22 @@ class AgentMarkdown extends StatelessWidget {
         ),
         Align(
           alignment: Alignment.centerRight,
-          child: IconButton(
-            tooltip: '复制消息',
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.copy_outlined, size: 16),
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: data));
-              if (context.mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('消息已复制')));
-              }
-            },
+          child: PilotControl(
+            className: 'message-copy',
+            kind: 'icon-button',
+            child: IconButton(
+              tooltip: '复制消息',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.copy_outlined, size: 16),
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: data));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('消息已复制')));
+                }
+              },
+            ),
           ),
         ),
       ],

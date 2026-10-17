@@ -1,0 +1,45 @@
+/* Native ChronoPilot skin: root colors + component classes. */
+:root {
+  --style-id: custom;
+  --seed: #087EF5;
+  --paper: #E9EBEF;
+  --surface: #F3F4F6;
+  --ink: #151515;
+  --muted: #62666D;
+  --line: #D1D1D6;
+  --accent: #087EF5;
+  --stage: #DCEBFB;
+  --screen: #183D36;
+  --signal: #C3EEDB;
+  --signal-red: #FF695D;
+  --signal-yellow: #F4ED71;
+  --signal-green: #C4F98A;
+  --paper-grain: 0;
+  --danger: #BA1A1A;
+  --dark-paper: #000000;
+  --dark-surface: #1C1C1E;
+  --dark-ink: #F5F5F7;
+  --dark-muted: #98989D;
+  --dark-line: #38383A;
+  --dark-accent: #0A84FF;
+  --dark-stage: #173A5C;
+  --dark-screen: #0D1D16;
+  --dark-signal: #C3EEDB;
+  --dark-signal-red: #FF827A;
+  --dark-signal-yellow: #F4ED71;
+  --dark-danger: #FFB4AB;
+  --radius-card: 18;
+  --radius-glass: 24;
+  --font-ui: Roboto, "Noto Sans CJK SC", sans-serif;
+  --font-mono: monospace;
+  --space-unit: 8;
+}
+
+.cp-button { --radius: 12; --border-width: 0; --border-color: line; }
+.cp-filter-button { --radius: 24; --border-width: 1; --border-color: line; }
+.cp-segment-button { --radius: 12; --border-width: 1; --border-color: line; }
+.cp-secondary-button { --border-width: 1; --border-color: line; }
+.cp-agent-send { --radius: 12; --fill: accent; --foreground: on-accent; }
+.cp-panel { --radius: 18; --border-width: 1; --border-color: line; }
+.cp-field { --radius: 8; --border-width: 1; --border-color: line; }
+.cp-dialog { --radius: 18; --border-width: 1; --border-color: line; }

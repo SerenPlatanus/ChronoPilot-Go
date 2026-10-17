@@ -4,51 +4,125 @@ import 'package:hive/hive.dart';
 
 enum PilotStyle {
   defaultStyle('default', '默认主题', '原版布局 · 蓝色强调'),
-  cassetteFuture('cassette_future', '磁带未来主题', '纸面质感 · 荧光仪表');
+  cassetteFuture('cassette_future', '磁带未来主题', '纸面质感 · 荧光仪表'),
+  constructivist('constructivist', '构成主义', '暖纸 · 朱红 · 炭黑'),
+  swiss('swiss', '瑞士风格', '冷白 · 石墨灰 · 红色强调'),
+  custom('custom', '自定义皮肤', '自行编辑 CSS');
 
   final String id, label, description;
   const PilotStyle(this.id, this.label, this.description);
   String get asset =>
-      'assets/styles/${this == defaultStyle ? 'default_style' : 'cassette_future'}.css';
+      'assets/styles/${this == defaultStyle ? 'default_style' : id}.css';
   static PilotStyle parse(String? id) =>
       values.firstWhere((v) => v.id == id, orElse: () => defaultStyle);
 }
 
-/// Only :root custom properties are interpreted, never arbitrary CSS/script.
+/// Interprets root tokens and the restricted .cp-* control classes only.
 /// The same source files provide a usable CSS reference for future Web views.
 @immutable
 class StyleTokens {
   final PilotStyle style;
   final Map<String, String> values;
-  const StyleTokens(this.style, this.values);
+  final Map<String, Map<String, String>> controls;
+  const StyleTokens(this.style, this.values, [this.controls = const {}]);
   factory StyleTokens.fromCss(PilotStyle style, String css) {
-    final root = RegExp(r':root\s*\{([^}]+)\}').firstMatch(css);
-    if (root == null) throw const FormatException('主题缺少 :root');
+    if (css.length > 65536) throw const FormatException('皮肤 CSS 超过长度上限');
+    css = css.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+    final blocks = <(String, String)>[];
+    var cursor = 0;
+    final pattern = RegExp(r'([^{}]+)\{([^{}]*)\}');
+    for (final block in pattern.allMatches(css)) {
+      if (css.substring(cursor, block.start).trim().isNotEmpty) {
+        throw const FormatException('不支持嵌套、媒体查询或不完整规则');
+      }
+      blocks.add((block[1]!.trim(), block[2]!));
+      cursor = block.end;
+    }
+    if (css.substring(cursor).trim().isNotEmpty) {
+      throw const FormatException('CSS 规则不完整');
+    }
+    final roots = blocks.where((b) => b.$1 == ':root').toList();
+    if (roots.length != 1) throw const FormatException('需要且只能有一个普通 :root');
+    final root = roots.single.$2;
     final values = {
-      for (final m in RegExp(
-        r'--([a-z-]+)\s*:\s*([^;]+);',
-      ).allMatches(root[1]!))
+      for (final m in RegExp(r'--([a-z-]+)\s*:\s*([^;]+);').allMatches(root))
         m[1]!: m[2]!.trim(),
     };
     if (values['style-id'] != style.id) throw const FormatException('主题标识不匹配');
-    final result = StyleTokens(style, Map.unmodifiable(values));
-    for (final key in [
-      'seed',
-      'paper',
-      'surface',
-      'ink',
-      'muted',
-      'line',
-      'accent',
-      'stage',
-      'screen',
-      'signal',
-      'danger',
-    ]) {
-      result.color(key);
+    final controls = <String, Map<String, String>>{};
+    for (final rule in blocks.where((b) => b.$1 != ':root')) {
+      final selector = RegExp(r'^\.cp-([a-z-]+)$').firstMatch(rule.$1);
+      if (selector == null) throw FormatException('不支持的选择器：${rule.$1}');
+      final declarations = <String, String>{};
+      for (final declaration
+          in rule.$2
+              .split(';')
+              .map((s) => s.trim())
+              .where((s) => s.isNotEmpty)) {
+        final entry = RegExp(
+          r'^--([a-z-]+)\s*:\s*(.+)$',
+        ).firstMatch(declaration);
+        if (entry == null) throw const FormatException('控件只支持 --radius 等自定义属性');
+        final key = entry[1]!, value = entry[2]!.trim();
+        if (key == 'radius' || key == 'border-width') {
+          final n = double.tryParse(value);
+          final max = key == 'radius' ? 28 : 4;
+          if (n == null || !n.isFinite || n < 0 || n > max) {
+            throw FormatException('无效控件尺寸：$key');
+          }
+        } else if (key == 'border-color' ||
+            key == 'fill' ||
+            key == 'foreground') {
+          if (![
+            'ink',
+            'line',
+            'accent',
+            'paper',
+            'surface',
+            'stage',
+            'screen',
+            'danger',
+            'on-accent',
+            'transparent',
+          ].contains(value)) {
+            throw FormatException('无效控件颜色引用：$value');
+          }
+        } else {
+          throw FormatException('不支持的控件属性：$key');
+        }
+        declarations[key] = value;
+      }
+      controls[selector[1]!] = Map.unmodifiable(declarations);
+    }
+    final result = StyleTokens(
+      style,
+      Map.unmodifiable(values),
+      Map.unmodifiable(controls),
+    );
+    result.color('seed');
+    for (final prefix in ['', 'dark-']) {
+      for (final name in [
+        'paper',
+        'surface',
+        'ink',
+        'muted',
+        'line',
+        'accent',
+        'stage',
+        'screen',
+        'signal',
+        'signal-red',
+        'signal-yellow',
+        'danger',
+      ]) {
+        result.color('$prefix$name');
+      }
     }
     for (final key in ['radius-card', 'radius-glass', 'space-unit']) {
       result.number(key);
+    }
+    if (values.containsKey('border-card') && result.number('border-card') > 4) {
+      throw const FormatException('卡片边框不能超过 4');
     }
     return result;
   }
@@ -62,7 +136,9 @@ class StyleTokens {
 
   double number(String key) {
     final n = double.tryParse(values[key] ?? '');
-    if (n == null || n < 0 || n > 100) throw FormatException('无效主题尺寸：$key');
+    if (n == null || !n.isFinite || n < 0 || n > 100) {
+      throw FormatException('无效主题尺寸：$key');
+    }
     return n;
   }
 }
@@ -74,12 +150,17 @@ class StyleController extends ChangeNotifier {
   Brightness _brightness;
   final Future<void> Function(String)? brightnessWriter;
   bool saving = false;
+  String? customCss;
+  final Future<void> Function(String)? customWriter;
+  final Map<(PilotStyle, Brightness), ThemeData> _themes = {};
   StyleController({
     required this.palettes,
     required this.writer,
     PilotStyle selected = PilotStyle.defaultStyle,
     Brightness brightness = Brightness.light,
     this.brightnessWriter,
+    this.customWriter,
+    this.customCss,
   }) : _selected = selected,
        _brightness = brightness;
   PilotStyle get selected => _selected;
@@ -87,8 +168,21 @@ class StyleController extends ChangeNotifier {
   static Future<StyleController> load() async {
     final palettes = await loadPalettes();
     final box = await Hive.openBox<String>('ui_preferences_v1');
+    final customCss = box.get('custom-css');
+    if (customCss != null) {
+      try {
+        palettes[PilotStyle.custom] = StyleTokens.fromCss(
+          PilotStyle.custom,
+          customCss,
+        );
+      } on FormatException {
+        /* Keep the safe bundled template. */
+      }
+    }
     return StyleController(
       palettes: palettes,
+      customCss: customCss,
+      customWriter: (css) => box.put('custom-css', css),
       writer: (id) => box.put('style', id),
       selected: PilotStyle.parse(box.get('style')),
       brightness: box.get('brightness') == 'dark'
@@ -98,13 +192,20 @@ class StyleController extends ChangeNotifier {
     );
   }
 
-  static Future<Map<PilotStyle, StyleTokens>> loadPalettes() async => {
-    for (final style in PilotStyle.values)
-      style: StyleTokens.fromCss(
-        style,
-        await rootBundle.loadString(style.asset),
-      ),
-  };
+  static Future<Map<PilotStyle, StyleTokens>> loadPalettes() async =>
+      Map.fromEntries(
+        await Future.wait(
+          PilotStyle.values.map(
+            (style) async => MapEntry(
+              style,
+              StyleTokens.fromCss(
+                style,
+                await rootBundle.loadString(style.asset),
+              ),
+            ),
+          ),
+        ),
+      );
   Future<void> select(PilotStyle style) async {
     if (saving || style == _selected) return;
     saving = true;
@@ -131,8 +232,32 @@ class StyleController extends ChangeNotifier {
     }
   }
 
-  ThemeData get theme =>
-      themeFor(palettes[_selected]!, brightness: _brightness);
+  Future<void> applyCustom(String css) async {
+    if (saving) return;
+    if (css.length > 65536) throw const FormatException('皮肤文件最多 64 KiB 字符');
+    final tokens = StyleTokens.fromCss(PilotStyle.custom, css);
+    // Validate both appearances before changing any persisted selection.
+    themeFor(tokens, brightness: Brightness.light);
+    themeFor(tokens, brightness: Brightness.dark);
+    saving = true;
+    notifyListeners();
+    try {
+      await customWriter?.call(css);
+      await writer(PilotStyle.custom.id);
+      palettes[PilotStyle.custom] = tokens;
+      customCss = css;
+      _themes.removeWhere((key, _) => key.$1 == PilotStyle.custom);
+      _selected = PilotStyle.custom;
+    } finally {
+      saving = false;
+      notifyListeners();
+    }
+  }
+
+  ThemeData get theme => _themes.putIfAbsent((
+    _selected,
+    _brightness,
+  ), () => themeFor(palettes[_selected]!, brightness: _brightness));
 }
 
 class StyleScope extends InheritedNotifier<StyleController> {
@@ -152,6 +277,8 @@ class PilotVisuals extends ThemeExtension<PilotVisuals> {
   final Color paper, surface, ink, muted, line, accent, stage, screen, signal;
   final Color signalRed, signalYellow;
   final double radius;
+  final double borderWidth;
+  final StyleTokens? tokens;
   const PilotVisuals({
     required this.cassette,
     this.dark = false,
@@ -167,6 +294,8 @@ class PilotVisuals extends ThemeExtension<PilotVisuals> {
     this.signalRed = const Color(0xffff695d),
     this.signalYellow = const Color(0xfff4ed71),
     required this.radius,
+    this.borderWidth = 1,
+    this.tokens,
   });
   static PilotVisuals of(BuildContext context) =>
       Theme.of(context).extension<PilotVisuals>() ??
@@ -183,6 +312,60 @@ class PilotVisuals extends ThemeExtension<PilotVisuals> {
         signal: Color(0xffc3eedb),
         radius: 12,
       );
+  Color namedColor(String name) => switch (name) {
+    'ink' => ink,
+    'line' => line,
+    'accent' => accent,
+    'paper' => paper,
+    'surface' => surface,
+    'stage' => stage,
+    'screen' => screen,
+    'danger' => tokens?.color(dark ? 'dark-danger' : 'danger') ?? signalRed,
+    'on-accent' => dark ? screen : Colors.white,
+    _ => Colors.transparent,
+  };
+
+  BoxDecoration decoration(
+    String className, {
+    double? defaultRadius,
+    double? defaultWidth,
+    Color? fill,
+  }) {
+    final rules = <String, String>{
+      ...?tokens?.controls['panel'],
+      ...?tokens?.controls[className],
+    };
+    final width =
+        double.tryParse(rules['border-width'] ?? '') ??
+        defaultWidth ??
+        borderWidth;
+    return BoxDecoration(
+      color: rules.containsKey('fill')
+          ? namedColor(rules['fill']!)
+          : fill ?? surface,
+      borderRadius: BorderRadius.circular(
+        double.tryParse(rules['radius'] ?? '') ?? defaultRadius ?? radius,
+      ),
+      border: Border.all(
+        width: width,
+        style: width == 0 ? BorderStyle.none : BorderStyle.solid,
+        color: rules.containsKey('border-color')
+            ? namedColor(rules['border-color']!)
+            : borderWidth > 1
+            ? ink
+            : line,
+      ),
+    );
+  }
+
+  RoundedRectangleBorder shape(String className, {double? defaultRadius}) {
+    final d = decoration(className, defaultRadius: defaultRadius);
+    return RoundedRectangleBorder(
+      borderRadius: d.borderRadius!,
+      side: (d.border! as Border).top,
+    );
+  }
+
   @override
   PilotVisuals copyWith() => this;
   @override
@@ -226,6 +409,8 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
     signalRed: color('signal-red'),
     signalYellow: color('signal-yellow'),
     radius: t.number('radius-card'),
+    borderWidth: double.tryParse(t.values['border-card'] ?? '1') ?? 1,
+    tokens: t,
   );
 
   final scheme = base.colorScheme.copyWith(
@@ -244,12 +429,21 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
     onSecondaryContainer: visuals.ink,
     error: color('danger'),
   );
+  final field = visuals.decoration('field', defaultRadius: 8);
   final border = OutlineInputBorder(
-    borderRadius: BorderRadius.circular(8),
-    borderSide: BorderSide(color: visuals.line),
+    borderRadius: field.borderRadius! as BorderRadius,
+    borderSide: (field.border! as Border).top,
   );
   return base.copyWith(
     colorScheme: scheme,
+    splashFactory: NoSplash.splashFactory,
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: ImmediatePageTransitions(),
+        TargetPlatform.linux: ImmediatePageTransitions(),
+        TargetPlatform.iOS: ImmediatePageTransitions(),
+      },
+    ),
     scaffoldBackgroundColor: visuals.paper,
     extensions: [visuals],
     textTheme: base.textTheme
@@ -298,17 +492,29 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: visuals.line),
+        borderRadius: BorderRadius.circular(
+          t.style == PilotStyle.constructivist
+              ? 0
+              : t.style == PilotStyle.swiss
+              ? 2
+              : 8,
+        ),
+        side: BorderSide(
+          color: visuals.borderWidth > 1 ? visuals.ink : visuals.line,
+          width: visuals.borderWidth,
+        ),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: visuals.surface,
+      fillColor: field.color,
       border: border,
       enabledBorder: border,
       focusedBorder: border.copyWith(
-        borderSide: BorderSide(color: visuals.accent, width: 1.5),
+        borderSide: BorderSide(
+          color: visuals.accent,
+          width: visuals.borderWidth > 1.5 ? visuals.borderWidth : 1.5,
+        ),
       ),
       contentPadding: const EdgeInsets.all(16),
       helperMaxLines: 3,
@@ -324,8 +530,19 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
         color: visuals.ink,
         fontSize: 13,
       ),
-      side: BorderSide(color: visuals.line),
-      shape: const StadiumBorder(),
+      side: BorderSide(
+        color: visuals.borderWidth > 1 ? visuals.ink : visuals.line,
+        width: visuals.borderWidth,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(
+          t.style == PilotStyle.constructivist
+              ? 0
+              : t.style == PilotStyle.swiss
+              ? 2
+              : 24,
+        ),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     ),
     navigationBarTheme: NavigationBarThemeData(
@@ -378,17 +595,36 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: visuals.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: visuals.shape('dialog', defaultRadius: 24),
     ),
     bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: visuals.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      shape: visuals.shape('dialog', defaultRadius: 24),
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(
       color: visuals.accent,
       linearTrackColor: visuals.line,
     ),
   );
+}
+
+/// Keep routes and back navigation instantaneous, including nested editors.
+class ImmediatePageTransitions extends PageTransitionsBuilder {
+  const ImmediatePageTransitions();
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => child;
+}
+
+class PilotPageRoute<T> extends MaterialPageRoute<T> {
+  PilotPageRoute({required super.builder});
+  @override
+  Duration get transitionDuration => Duration.zero;
+  @override
+  Duration get reverseTransitionDuration => Duration.zero;
 }

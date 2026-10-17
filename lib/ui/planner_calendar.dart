@@ -1,3 +1,4 @@
+import 'controls.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../planner/item.dart';
@@ -62,32 +63,48 @@ class _PlannerCalendarState extends State<PlannerCalendar> {
                 ),
               ),
             ),
-            TextButton(
-              onPressed: () => widget.onChanged(DateTime.now()),
-              child: const Text('今天'),
+            PilotControl(
+              className: 'calendar-today',
+              kind: 'text-button',
+              child: TextButton(
+                onPressed: () => widget.onChanged(DateTime.now()),
+                child: const Text('今天'),
+              ),
             ),
-            IconButton(
-              tooltip: month ? '收起月历' : '展开月历',
-              onPressed: () => setState(() => month = !month),
-              icon: Icon(month ? Icons.expand_less : Icons.calendar_month),
+            PilotControl(
+              className: 'calendar-collapse',
+              kind: 'icon-button',
+              child: IconButton(
+                tooltip: month ? '收起月历' : '展开月历',
+                onPressed: () => setState(() => month = !month),
+                icon: Icon(month ? Icons.expand_less : Icons.calendar_month),
+              ),
             ),
-            IconButton(
-              tooltip: '大课表',
-              onPressed: widget.onTimetable,
-              icon: const Icon(Icons.calendar_view_week),
+            PilotControl(
+              className: 'timetable-open',
+              kind: 'icon-button',
+              child: IconButton(
+                tooltip: '大课表',
+                onPressed: widget.onTimetable,
+                icon: const Icon(Icons.calendar_view_week),
+              ),
             ),
           ],
         ),
         Row(
           children: [
-            IconButton(
-              tooltip: month ? '上个月' : '上一周',
-              onPressed: () => widget.onChanged(
-                month
-                    ? DateTime(d.year, d.month - 1, 1)
-                    : d.subtract(const Duration(days: 7)),
+            PilotControl(
+              className: 'month-previous',
+              kind: 'icon-button',
+              child: IconButton(
+                tooltip: month ? '上个月' : '上一周',
+                onPressed: () => widget.onChanged(
+                  month
+                      ? DateTime(d.year, d.month - 1, 1)
+                      : d.subtract(const Duration(days: 7)),
+                ),
+                icon: const Icon(Icons.chevron_left),
               ),
-              icon: const Icon(Icons.chevron_left),
             ),
             Expanded(
               child: Text(
@@ -96,14 +113,18 @@ class _PlannerCalendarState extends State<PlannerCalendar> {
                 style: TextStyle(color: v.muted, fontSize: 13),
               ),
             ),
-            IconButton(
-              tooltip: month ? '下个月' : '下一周',
-              onPressed: () => widget.onChanged(
-                month
-                    ? DateTime(d.year, d.month + 1, 1)
-                    : d.add(const Duration(days: 7)),
+            PilotControl(
+              className: 'month-next',
+              kind: 'icon-button',
+              child: IconButton(
+                tooltip: month ? '下个月' : '下一周',
+                onPressed: () => widget.onChanged(
+                  month
+                      ? DateTime(d.year, d.month + 1, 1)
+                      : d.add(const Duration(days: 7)),
+                ),
+                icon: const Icon(Icons.chevron_right),
               ),
-              icon: const Icon(Icons.chevron_right),
             ),
           ],
         ),
@@ -145,45 +166,65 @@ class _PlannerCalendarState extends State<PlannerCalendar> {
                       padding: const EdgeInsets.symmetric(vertical: 7),
                       child: Column(
                         children: [
-                          Container(
+                          SizedBox(
                             width: 36,
                             height: 36,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: selected
-                                  ? v.accent
-                                  : today
-                                  ? v.line
-                                  : Colors.transparent,
-                            ),
-                            child: Text(
-                              '${date.day}',
-                              style: TextStyle(
-                                fontSize: 19,
-                                color: selected
-                                    ? Theme.of(context).colorScheme.onPrimary
-                                    : date.month != d.month
-                                    ? v.muted.withValues(alpha: .5)
-                                    : v.ink,
-                              ),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              alignment: Alignment.center,
+                              children: [
+                                Positioned.fill(
+                                  child: Transform.translate(
+                                    // Center the disc on the digits' visible ink,
+                                    // rather than the font's ascent/descent box.
+                                    offset: const Offset(0, 2),
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: selected
+                                            ? v.accent
+                                            : today
+                                            ? v.line
+                                            : Colors.transparent,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '${date.day}',
+                                  style: TextStyle(
+                                    fontSize: 19,
+                                    color: selected
+                                        ? Theme.of(
+                                            context,
+                                          ).colorScheme.onPrimary
+                                        : date.month != d.month
+                                        ? v.muted.withValues(alpha: .5)
+                                        : v.ink,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           const SizedBox(height: 4),
                           SizedBox(
-                            height: 5,
+                            height: 8,
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: colors
                                   .map(
                                     (c) => Container(
-                                      width: 4,
-                                      height: 4,
+                                      width: 7,
+                                      height: 7,
                                       margin: const EdgeInsets.symmetric(
                                         horizontal: 1,
                                       ),
                                       decoration: BoxDecoration(
                                         color: c,
+                                        border: Border.all(
+                                          color: v.ink.withValues(alpha: .45),
+                                          width: .6,
+                                        ),
                                         shape: BoxShape.circle,
                                       ),
                                     ),
@@ -248,14 +289,22 @@ class _LargeTimetableState extends State<LargeTimetable> {
       appBar: AppBar(
         title: const Text('大课表'),
         actions: [
-          IconButton(
-            tooltip: '切换课表缩放',
-            onPressed: () => setState(() => zoom = !zoom),
-            icon: Icon(zoom ? Icons.zoom_out : Icons.zoom_in),
+          PilotControl(
+            className: 'timetable-zoom',
+            kind: 'icon-button',
+            child: IconButton(
+              tooltip: '切换课表缩放',
+              onPressed: () => setState(() => zoom = !zoom),
+              icon: Icon(zoom ? Icons.zoom_out : Icons.zoom_in),
+            ),
           ),
-          TextButton(
-            onPressed: () => setState(() => day = DateTime.now()),
-            child: const Text('今天'),
+          PilotControl(
+            className: 'timetable-today',
+            kind: 'text-button',
+            child: TextButton(
+              onPressed: () => setState(() => day = DateTime.now()),
+              child: const Text('今天'),
+            ),
           ),
         ],
       ),
@@ -263,11 +312,16 @@ class _LargeTimetableState extends State<LargeTimetable> {
         children: [
           Row(
             children: [
-              IconButton(
-                tooltip: '上一周',
-                onPressed: () =>
-                    setState(() => day = day.subtract(const Duration(days: 7))),
-                icon: const Icon(Icons.chevron_left),
+              PilotControl(
+                className: 'week-previous',
+                kind: 'icon-button',
+                child: IconButton(
+                  tooltip: '上一周',
+                  onPressed: () => setState(
+                    () => day = day.subtract(const Duration(days: 7)),
+                  ),
+                  icon: const Icon(Icons.chevron_left),
+                ),
               ),
               Expanded(
                 child: Center(
@@ -276,11 +330,15 @@ class _LargeTimetableState extends State<LargeTimetable> {
                   ),
                 ),
               ),
-              IconButton(
-                tooltip: '下一周',
-                onPressed: () =>
-                    setState(() => day = day.add(const Duration(days: 7))),
-                icon: const Icon(Icons.chevron_right),
+              PilotControl(
+                className: 'week-next',
+                kind: 'icon-button',
+                child: IconButton(
+                  tooltip: '下一周',
+                  onPressed: () =>
+                      setState(() => day = day.add(const Duration(days: 7))),
+                  icon: const Icon(Icons.chevron_right),
+                ),
               ),
             ],
           ),

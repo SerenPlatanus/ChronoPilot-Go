@@ -1,3 +1,4 @@
+import '../ui/controls.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -224,10 +225,14 @@ class _PlannerSettingsState extends State<PlannerSettings> {
                       hintText: '例如：23点前休息，下午适合集中学习',
                     ),
                   ),
-                  TextButton.icon(
-                    onPressed: () => preferences.clear(),
-                    icon: const Icon(Icons.clear_all),
-                    label: const Text('清空长期偏好（保存后生效）'),
+                  PilotControl(
+                    className: 'preferences-clear',
+                    kind: 'text-button',
+                    child: TextButton.icon(
+                      onPressed: () => preferences.clear(),
+                      icon: const Icon(Icons.clear_all),
+                      label: const Text('清空长期偏好（保存后生效）'),
+                    ),
                   ),
                 ],
               ),
@@ -286,36 +291,40 @@ class _PlannerSettingsState extends State<PlannerSettings> {
                         : Icons.sensors_off,
                   ),
                   const SizedBox(height: 16),
-                  FilledButton.tonalIcon(
-                    onPressed: (!mcpExecutionEnabled || widget.mcp.starting)
-                        ? null
-                        : () async {
-                            try {
-                              if (widget.mcp.running) {
-                                await widget.mcp.stop();
-                              } else {
-                                await widget.mcp.start();
+                  PilotControl(
+                    className: 'mcp-toggle',
+                    kind: 'primary-button',
+                    child: FilledButton.tonalIcon(
+                      onPressed: (!mcpExecutionEnabled || widget.mcp.starting)
+                          ? null
+                          : () async {
+                              try {
+                                if (widget.mcp.running) {
+                                  await widget.mcp.stop();
+                                } else {
+                                  await widget.mcp.start();
+                                }
+                                if (mounted) setState(() {});
+                              } catch (_) {
+                                if (mounted) {
+                                  setState(() => error = 'MCP 启动失败，端口可能已占用');
+                                }
                               }
-                              if (mounted) setState(() {});
-                            } catch (_) {
-                              if (mounted) {
-                                setState(() => error = 'MCP 启动失败，端口可能已占用');
-                              }
-                            }
-                          },
-                    icon: Icon(
-                      widget.mcp.running
-                          ? Icons.stop_circle_outlined
-                          : Icons.play_arrow,
-                    ),
-                    label: Text(
-                      !mcpExecutionEnabled
-                          ? 'MCP 接入开发已暂停'
-                          : widget.mcp.starting
-                          ? '正在启动…'
-                          : widget.mcp.running
-                          ? '停止 MCP'
-                          : '启动 MCP',
+                            },
+                      icon: Icon(
+                        widget.mcp.running
+                            ? Icons.stop_circle_outlined
+                            : Icons.play_arrow,
+                      ),
+                      label: Text(
+                        !mcpExecutionEnabled
+                            ? 'MCP 接入开发已暂停'
+                            : widget.mcp.starting
+                            ? '正在启动…'
+                            : widget.mcp.running
+                            ? '停止 MCP'
+                            : '启动 MCP',
+                      ),
                     ),
                   ),
                   if (widget.mcp.running) ...[
@@ -324,26 +333,34 @@ class _PlannerSettingsState extends State<PlannerSettings> {
                       'http://127.0.0.1:${widget.mcp.port}/mcp',
                       style: instrumentText(color: v.muted),
                     ),
-                    TextButton.icon(
-                      onPressed: () async {
-                        final token = widget.mcp.token;
-                        if (token == null) return;
-                        await Clipboard.setData(ClipboardData(text: token));
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('连接令牌已复制')),
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.copy_outlined),
-                      label: const Text('复制本次 Bearer 令牌'),
+                    PilotControl(
+                      className: 'mcp-token-copy',
+                      kind: 'text-button',
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          final token = widget.mcp.token;
+                          if (token == null) return;
+                          await Clipboard.setData(ClipboardData(text: token));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('连接令牌已复制')),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.copy_outlined),
+                        label: const Text('复制本次 Bearer 令牌'),
+                      ),
                     ),
                   ],
                   const Divider(),
-                  OutlinedButton.icon(
-                    onPressed: copyJson,
-                    icon: const Icon(Icons.data_object),
-                    label: const Text('复制当前日程 JSON'),
+                  PilotControl(
+                    className: 'context-export',
+                    kind: 'secondary-button',
+                    child: OutlinedButton.icon(
+                      onPressed: copyJson,
+                      icon: const Icon(Icons.data_object),
+                      label: const Text('复制当前日程 JSON'),
+                    ),
                   ),
                 ],
               ),
@@ -365,10 +382,14 @@ class _PlannerSettingsState extends State<PlannerSettings> {
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
             child: SizedBox(
               width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: saving ? null : save,
-                icon: const Icon(Icons.check),
-                label: Text(saving ? '保存中…' : '保存设置'),
+              child: PilotControl(
+                className: 'settings-save',
+                kind: 'primary-button',
+                child: FilledButton.icon(
+                  onPressed: saving ? null : save,
+                  icon: const Icon(Icons.check),
+                  label: Text(saving ? '保存中…' : '保存设置'),
+                ),
               ),
             ),
           ),

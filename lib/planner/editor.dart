@@ -1,3 +1,5 @@
+import '../ui/styles.dart';
+import '../ui/controls.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'item.dart';
@@ -9,7 +11,7 @@ Future<void> editItem(
   PlannerDataApi repo, [
   Item? item,
 ]) => Navigator.of(context).push(
-  MaterialPageRoute<void>(
+  PilotPageRoute<void>(
     builder: (_) => ItemEditor(repo: repo, item: item),
   ),
 );
@@ -119,17 +121,21 @@ class _ItemEditorState extends State<ItemEditor> {
       subtitle: Text(value == null ? '未设置' : localTime(value)),
       trailing: locked
           ? const Icon(Icons.lock_outline, size: 18)
-          : IconButton(
-              tooltip: '清除$field时间',
-              icon: const Icon(Icons.clear),
-              onPressed: () => setState(() {
-                if (field == '截止') {
-                  deadline = null;
-                } else {
-                  start = null;
-                  end = null;
-                }
-              }),
+          : PilotControl(
+              className: 'item-time-clear',
+              kind: 'icon-button',
+              child: IconButton(
+                tooltip: '清除$field时间',
+                icon: const Icon(Icons.clear),
+                onPressed: () => setState(() {
+                  if (field == '截止') {
+                    deadline = null;
+                  } else {
+                    start = null;
+                    end = null;
+                  }
+                }),
+              ),
             ),
       onTap: locked
           ? null
@@ -264,46 +270,63 @@ class _ItemEditorState extends State<ItemEditor> {
               child: NoticePanel(title: error!, icon: Icons.error_outline),
             ),
           const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: saving ? null : save,
-            icon: const Icon(Icons.check),
-            label: Text(saving ? '保存中…' : '保存'),
+          PilotControl(
+            className: 'item-save',
+            kind: 'primary-button',
+            child: FilledButton.icon(
+              onPressed: saving ? null : save,
+              icon: const Icon(Icons.check),
+              label: Text(saving ? '保存中…' : '保存'),
+            ),
           ),
           if (widget.item != null && !locked)
             Padding(
               padding: const EdgeInsets.only(top: 12),
-              child: TextButton.icon(
-                onPressed: saving
-                    ? null
-                    : () async {
-                        final yes = await showDialog<bool>(
-                          context: context,
-                          builder: (c) => AlertDialog(
-                            title: const Text('删除事项？'),
-                            content: const Text('关联的未来 Agent 时间块也会删除。'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(c, false),
-                                child: const Text('取消'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(c, true),
-                                child: const Text('删除'),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (yes == true) {
-                          try {
-                            await widget.repo.removeItem(widget.item!.id);
-                            if (context.mounted) Navigator.pop(context);
-                          } catch (_) {
-                            if (mounted) setState(() => error = '删除失败，请重试');
+              child: PilotControl(
+                className: 'item-delete',
+                kind: 'text-button',
+                child: TextButton.icon(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final yes = await showDialog<bool>(
+                            animationStyle: AnimationStyle.noAnimation,
+                            context: context,
+                            builder: (c) => AlertDialog(
+                              title: const Text('删除事项？'),
+                              content: const Text('关联的未来 Agent 时间块也会删除。'),
+                              actions: [
+                                PilotControl(
+                                  className: 'item-delete-cancel',
+                                  kind: 'text-button',
+                                  child: TextButton(
+                                    onPressed: () => Navigator.pop(c, false),
+                                    child: const Text('取消'),
+                                  ),
+                                ),
+                                PilotControl(
+                                  className: 'item-delete-confirm',
+                                  kind: 'text-button',
+                                  child: TextButton(
+                                    onPressed: () => Navigator.pop(c, true),
+                                    child: const Text('删除'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (yes == true) {
+                            try {
+                              await widget.repo.removeItem(widget.item!.id);
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (_) {
+                              if (mounted) setState(() => error = '删除失败，请重试');
+                            }
                           }
-                        }
-                      },
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('删除事项'),
+                        },
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('删除事项'),
+                ),
               ),
             ),
         ],

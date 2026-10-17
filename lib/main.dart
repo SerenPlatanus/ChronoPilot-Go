@@ -9,13 +9,31 @@ import 'ui/styles.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
-  runApp(ChronoPilotRoot(styles: await StyleController.load()));
+  final initial = await Future.wait<Object?>([
+    StyleController.load(),
+    PlannerRepository.openLastAccount()
+        .then<PlannerRepository?>((r) => r)
+        .catchError((Object _) => null),
+  ]);
+  runApp(
+    ChronoPilotRoot(
+      styles: initial[0] as StyleController,
+      repository: initial[1] as PlannerRepository?,
+      restoreAccount: true,
+    ),
+  );
 }
 
 class ChronoPilotRoot extends StatelessWidget {
   final StyleController styles;
   final PlannerRepository? repository;
-  const ChronoPilotRoot({super.key, required this.styles, this.repository});
+  final bool restoreAccount;
+  const ChronoPilotRoot({
+    super.key,
+    required this.styles,
+    this.repository,
+    this.restoreAccount = false,
+  });
   @override
   Widget build(BuildContext context) => StyleScope(
     controller: styles,
@@ -31,7 +49,14 @@ class ChronoPilotRoot extends StatelessWidget {
         theme: styles.theme,
         // Apply the complete palette atomically; no partial Material theme lerp.
         themeAnimationDuration: Duration.zero,
-        home: PlannerApp(repository: repository),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: child!,
+        ),
+        home: PlannerApp(
+          repository: repository,
+          restoreAccount: restoreAccount,
+        ),
       ),
     ),
   );

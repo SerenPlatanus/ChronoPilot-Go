@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
-/// Same generated artwork as the Android launcher icon.
+/// Uses the editable vector source, without bundling the large raster artwork.
 class EclipseMark extends StatelessWidget {
   final double size;
   const EclipseMark({super.key, this.size = 64});
@@ -10,11 +11,12 @@ class EclipseMark extends StatelessWidget {
     image: true,
     child: ClipRRect(
       borderRadius: BorderRadius.circular(size * .1875),
-      child: Image.asset(
-        'assets/branding/eclipse.png',
+      child: SvgPicture.asset(
+        'assets/branding/eclipse.svg',
         width: size,
         height: size,
         fit: BoxFit.cover,
+        excludeFromSemantics: true,
       ),
     ),
   );

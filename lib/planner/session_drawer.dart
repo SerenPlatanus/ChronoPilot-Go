@@ -1,3 +1,4 @@
+import '../ui/controls.dart';
 import 'package:flutter/material.dart';
 import '../ui/styles.dart';
 
@@ -67,6 +68,9 @@ class SessionDrawer extends StatelessWidget {
     return Drawer(
       width: (MediaQuery.sizeOf(context).width * .84).clamp(240, 360),
       backgroundColor: v.surface,
+      shape: v.shape('drawer'),
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -85,20 +89,28 @@ class SessionDrawer extends StatelessWidget {
                       ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: '关闭对话列表',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
+                  PilotControl(
+                    className: 'history-close',
+                    kind: 'icon-button',
+                    child: IconButton(
+                      tooltip: '关闭对话列表',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
                   ),
                 ],
               ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: OutlinedButton.icon(
-                onPressed: busy ? null : onNew,
-                icon: const Icon(Icons.add_comment_outlined),
-                label: const Text('新对话'),
+              child: PilotControl(
+                className: 'history-new',
+                kind: 'secondary-button',
+                child: OutlinedButton.icon(
+                  onPressed: busy ? null : onNew,
+                  icon: const Icon(Icons.add_comment_outlined),
+                  label: const Text('新对话'),
+                ),
               ),
             ),
             Expanded(
@@ -140,22 +152,26 @@ class SessionDrawer extends StatelessWidget {
                             right: 0,
                           ),
                           onTap: () => onSelected(s['id'] as String),
-                          trailing: PopupMenuButton<String>(
-                            tooltip: '会话操作',
-                            enabled: !busy,
-                            icon: Icon(Icons.more_horiz, color: v.muted),
-                            onSelected: (action) =>
-                                onManage(s['id'] as String, action),
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                value: 'rename',
-                                child: Text('重命名'),
-                              ),
-                              PopupMenuItem(
-                                value: 'delete',
-                                child: Text('删除会话'),
-                              ),
-                            ],
+                          trailing: PilotControl(
+                            className: 'history-menu',
+                            kind: 'menu-button',
+                            child: PopupMenuButton<String>(
+                              tooltip: '会话操作',
+                              enabled: !busy,
+                              icon: Icon(Icons.more_horiz, color: v.muted),
+                              onSelected: (action) =>
+                                  onManage(s['id'] as String, action),
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(
+                                  value: 'rename',
+                                  child: Text('重命名'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text('删除会话'),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       },

@@ -1,3 +1,4 @@
+import '../ui/controls.dart';
 import 'package:flutter/material.dart';
 import 'agent_tools.dart';
 import 'item.dart';
@@ -103,48 +104,56 @@ class _DraftCardState extends State<DraftCard> {
             Wrap(
               spacing: 8,
               children: [
-                FilledButton(
-                  onPressed: disabled
-                      ? null
-                      : () async {
-                          setState(() {
-                            saving = true;
-                            error = null;
-                          });
-                          try {
-                            await widget.tools.apply(
-                              widget.draft,
-                              sessionId: widget.sessionId,
-                            );
-                          } catch (e) {
-                            if (mounted) {
-                              setState(
-                                () => error = e is FormatException
-                                    ? e.message.toString()
-                                    : '保存失败，未写入，请重试',
-                              );
-                            }
-                          } finally {
-                            if (mounted) setState(() => saving = false);
-                          }
-                        },
-                  child: Text(saving ? '保存中…' : '确认并写入日程'),
-                ),
-                if (widget.status == null)
-                  TextButton(
-                    onPressed: saving
+                PilotControl(
+                  className: 'plan-confirm',
+                  kind: 'primary-button',
+                  child: FilledButton(
+                    onPressed: disabled
                         ? null
                         : () async {
+                            setState(() {
+                              saving = true;
+                              error = null;
+                            });
                             try {
-                              await widget.tools.repo.dismissDraft(
-                                widget.sessionId,
-                                widget.draft['draftId'] as String,
+                              await widget.tools.apply(
+                                widget.draft,
+                                sessionId: widget.sessionId,
                               );
-                            } catch (_) {
-                              if (mounted) setState(() => error = '操作失败，请重试');
+                            } catch (e) {
+                              if (mounted) {
+                                setState(
+                                  () => error = e is FormatException
+                                      ? e.message.toString()
+                                      : '保存失败，未写入，请重试',
+                                );
+                              }
+                            } finally {
+                              if (mounted) setState(() => saving = false);
                             }
                           },
-                    child: const Text('放弃方案'),
+                    child: Text(saving ? '保存中…' : '确认并写入日程'),
+                  ),
+                ),
+                if (widget.status == null)
+                  PilotControl(
+                    className: 'plan-discard',
+                    kind: 'text-button',
+                    child: TextButton(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              try {
+                                await widget.tools.repo.dismissDraft(
+                                  widget.sessionId,
+                                  widget.draft['draftId'] as String,
+                                );
+                              } catch (_) {
+                                if (mounted) setState(() => error = '操作失败，请重试');
+                              }
+                            },
+                      child: const Text('放弃方案'),
+                    ),
                   ),
               ],
             ),

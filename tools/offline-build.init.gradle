@@ -1,0 +1,13 @@
+// Align plugin buildscript AGP with android/settings.gradle for cached builds.
+// Enabled explicitly with -I; never changes third-party pub-cache sources.
+gradle.beforeProject { project ->
+    project.buildscript.configurations.configureEach {
+        resolutionStrategy.eachDependency { dependency ->
+            if (dependency.requested.group == 'com.android.tools.build' &&
+                dependency.requested.name == 'gradle') {
+                dependency.useVersion('8.13.2')
+                dependency.because('Match the Android Gradle plugin registered by this project')
+            }
+        }
+    }
+}

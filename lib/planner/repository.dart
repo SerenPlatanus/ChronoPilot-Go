@@ -44,6 +44,17 @@ class PlannerRepository extends ChangeNotifier implements PlannerDataApi {
     );
   }
 
+  /// Local-only bootstrap pointer: no credentials or network on the first frame.
+  static Future<PlannerRepository> openLastAccount() async {
+    final box = await Hive.openBox<String>('planner_bootstrap_v1');
+    return open(box.get('last_scope') ?? 'local');
+  }
+
+  static Future<void> rememberAccount(String scope) async {
+    final box = await Hive.openBox<String>('planner_bootstrap_v1');
+    await box.put('last_scope', scope);
+  }
+
   void _rebuild() {
     _items =
         (List.from(_state['items'] as List? ?? [])

@@ -15,6 +15,7 @@ import 'package:celechron/planner/agent_tools.dart';
 import 'package:celechron/planner/repository.dart';
 import 'package:celechron/planner/settings_page.dart';
 import 'package:celechron/ui/styles.dart';
+import 'package:celechron/ui/controls.dart';
 
 const previews = bool.fromEnvironment('UI_PREVIEWS');
 Future<PlannerRepository> seed() async {
@@ -134,8 +135,8 @@ void main() {
       }
     }
   });
-  test('两份 CSS 都可读取；默认使用原版蓝色强调', () {
-    expect(palettes.length, 2);
+  test('全部 CSS 都可读取；默认使用原版蓝色强调', () {
+    expect(palettes.length, PilotStyle.values.length);
     expect(
       palettes[PilotStyle.cassetteFuture]!.color('paper'),
       const Color(0xffe9e3d4),
@@ -153,6 +154,94 @@ void main() {
     );
     expect(PilotStyle.parse('unknown'), PilotStyle.defaultStyle);
   });
+  test('控件规则拒绝越界尺寸和未知颜色，忽略注释', () async {
+    final css = await rootBundle.loadString(PilotStyle.constructivist.asset);
+    expect(
+      () => StyleTokens.fromCss(
+        PilotStyle.constructivist,
+        '$css\n.cp-agent-send { --border-width: 9; }',
+      ),
+      throwsFormatException,
+    );
+    expect(
+      () => StyleTokens.fromCss(
+        PilotStyle.constructivist,
+        '$css\n.cp-agent-send { --fill: unknown; }',
+      ),
+      throwsFormatException,
+    );
+    expect(
+      StyleTokens.fromCss(
+        PilotStyle.constructivist,
+        '$css\n/* .cp-bogus { --radius: 999; } */',
+      ).controls.containsKey('bogus'),
+      isFalse,
+    );
+  });
+  for (final style in [PilotStyle.constructivist, PilotStyle.swiss]) {
+    for (final brightness in Brightness.values) {
+      testWidgets('${style.id} ${brightness.name} 独立按钮类、边框与操作状态生效', (
+        tester,
+      ) async {
+        var taps = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: themeFor(palettes[style]!, brightness: brightness),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  PilotControl(
+                    className: 'agent-send',
+                    kind: 'icon-button',
+                    child: IconButton.filled(
+                      tooltip: '发送',
+                      onPressed: () => taps++,
+                      icon: const Icon(Icons.send),
+                    ),
+                  ),
+                  const PilotControl(
+                    className: 'item-save',
+                    kind: 'primary-button',
+                    child: FilledButton(onPressed: null, child: Text('保存')),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        final context = tester.element(find.byType(IconButton));
+        final theme = Theme.of(context),
+            button = IconButtonTheme.of(context).style!;
+        final side = button.side!.resolve({})!;
+        expect(side.width, style == PilotStyle.constructivist ? 2 : 1);
+        // The action class overrides icon-button's ink outline with accent.
+        expect(side.color, theme.colorScheme.primary);
+        expect(
+          (button.shape!.resolve({})! as RoundedRectangleBorder).borderRadius,
+          BorderRadius.circular(style == PilotStyle.constructivist ? 0 : 2),
+        );
+        expect(
+          button.foregroundColor!.resolve({}),
+          theme.colorScheme.onPrimary,
+        );
+        expect(button.overlayColor!.resolve({WidgetState.pressed}), isNotNull);
+        expect(
+          button.foregroundColor!.resolve({WidgetState.disabled})!.a,
+          lessThan(1),
+        );
+        expect(
+          tester.getSize(find.byType(IconButton)).height,
+          greaterThanOrEqualTo(48),
+        );
+        await tester.tap(find.byTooltip('发送'));
+        expect(taps, 1);
+        expect(
+          tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+          isNull,
+        );
+      });
+    }
+  }
   test('主题立即持久化，失败不发布，重建恢复选择', () async {
     String? saved;
     final controller = StyleController(
@@ -188,16 +277,21 @@ void main() {
     Hive.init(temp.path);
     try {
       final first = await StyleController.load();
-      await first.select(PilotStyle.cassetteFuture);
+      await first.select(PilotStyle.constructivist);
       await first.selectBrightness(Brightness.dark);
       first.dispose();
       await Hive.box<String>('ui_preferences_v1').close();
       final reopened = await StyleController.load();
-      expect(reopened.selected, PilotStyle.cassetteFuture);
+      expect(reopened.selected, PilotStyle.constructivist);
       expect(reopened.brightness, Brightness.dark);
-      await reopened.select(PilotStyle.defaultStyle);
+      await reopened.select(PilotStyle.swiss);
       expect(reopened.brightness, Brightness.dark);
       reopened.dispose();
+      await Hive.box<String>('ui_preferences_v1').close();
+      final third = await StyleController.load();
+      expect(third.selected, PilotStyle.swiss);
+      expect(third.brightness, Brightness.dark);
+      third.dispose();
       await Hive.box<String>('ui_preferences_v1').close();
     } finally {
       await temp.delete(recursive: true);
@@ -220,14 +314,27 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('style-cassette_future')));
     await tester.pumpAndSettle();
     expect(saved, 'cassette_future');
+    for (final style in [PilotStyle.constructivist, PilotStyle.swiss]) {
+      await tester.ensureVisible(find.byKey(ValueKey('style-${style.id}')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('style-${style.id}')));
+      await tester.pumpAndSettle();
+      expect(saved, style.id);
+      expect(tester.state(find.byType(PlannerSettings)), same(state));
+    }
     await tester.ensureVisible(find.text('深色'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('深色'));
     await tester.pumpAndSettle();
     expect(controller.brightness, Brightness.dark);
 
     expect(tester.state(find.byType(PlannerSettings)), same(state));
     final context = tester.element(find.byType(PlannerSettings));
-    expect(PilotVisuals.of(context).cassette, isTrue);
+    expect(controller.selected, PilotStyle.swiss);
+    expect(
+      PilotVisuals.of(context).accent,
+      palettes[PilotStyle.swiss]!.color('dark-accent'),
+    );
     await tester.scrollUntilVisible(
       find.text('MCP 服务器'),
       500,
@@ -243,6 +350,38 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
   });
+  for (final style in [PilotStyle.constructivist, PilotStyle.swiss]) {
+    for (final brightness in Brightness.values) {
+      test('${style.id} ${brightness.name} 关键文字与控件对比度', () {
+        final theme = themeFor(palettes[style]!, brightness: brightness),
+            v = theme.extension<PilotVisuals>()!;
+        final pairs = [
+          ('ink/paper', v.ink, v.paper),
+          ('ink/surface', v.ink, v.surface),
+          ('ink/stage', v.ink, v.stage),
+          ('muted/paper', v.muted, v.paper),
+          ('muted/surface', v.muted, v.surface),
+          ('accent/paper', v.accent, v.paper),
+          ('accent/surface', v.accent, v.surface),
+          (
+            'onPrimary/primary',
+            theme.colorScheme.onPrimary,
+            theme.colorScheme.primary,
+          ),
+          ('danger/paper', theme.colorScheme.error, v.paper),
+          ('danger/surface', theme.colorScheme.error, v.surface),
+          ('signal/screen', v.signal, v.screen),
+          ('warning/screen', v.signalYellow, v.screen),
+          ('error/screen', v.signalRed, v.screen),
+        ];
+        for (final pair in pairs) {
+          final a = pair.$2.computeLuminance(), b = pair.$3.computeLuminance();
+          final ratio = a > b ? (a + .05) / (b + .05) : (b + .05) / (a + .05);
+          expect(ratio, greaterThanOrEqualTo(4.5), reason: pair.$1);
+        }
+      });
+    }
+  }
   for (final brightness in Brightness.values) {
     for (final style in PilotStyle.values) {
       for (final spec in [
@@ -472,6 +611,30 @@ $$
       await tester.pumpAndSettle();
       await shot('default-agent-history');
 
+      await tester.tap(find.byTooltip('关闭对话列表'));
+      await tester.pumpAndSettle();
+      for (final style in [
+        PilotStyle.defaultStyle,
+        PilotStyle.constructivist,
+        PilotStyle.swiss,
+      ]) {
+        await controller.select(style);
+        for (final brightness in Brightness.values) {
+          await controller.selectBrightness(brightness);
+          await tester.pumpAndSettle();
+          await shot('${style.id}-${brightness.name}-agent');
+          await tester.tap(find.byIcon(Icons.calendar_month_outlined));
+          await tester.pumpAndSettle();
+          await shot('${style.id}-${brightness.name}-calendar');
+          await tester.tap(find.byTooltip('设置'));
+          await tester.pumpAndSettle();
+          await shot('${style.id}-${brightness.name}-settings');
+          await tester.tap(find.byType(BackButton));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byIcon(Icons.auto_awesome_outlined));
+          await tester.pumpAndSettle();
+        }
+      }
       await tester.pumpWidget(const SizedBox());
       controller.dispose();
     });

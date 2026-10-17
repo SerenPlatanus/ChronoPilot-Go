@@ -1,0 +1,52 @@
+/* Native ChronoPilot skin: root colors + component classes. */
+:root {
+  --style-id: swiss;
+  --seed: #B4242C;
+  --paper: #F2F4F6;
+  --surface: #FFFFFF;
+  --ink: #16191D;
+  --muted: #59616C;
+  --line: #CBD1D8;
+  --accent: #B4242C;
+  --stage: #E4E9EF;
+  --screen: #1A1E24;
+  --signal: #DDE7F0;
+  --signal-red: #FFABB0;
+  --signal-yellow: #B9D6EC;
+  --signal-green: #DDE7F0;
+  --paper-grain: 0;
+  --danger: #B4232B;
+  --dark-paper: #0D1014;
+  --dark-surface: #1A1F26;
+  --dark-ink: #F2F5F8;
+  --dark-muted: #ADB8C5;
+  --dark-line: #3A4350;
+  --dark-accent: #FF9DA5;
+  --dark-stage: #29313D;
+  --dark-screen: #090C10;
+  --dark-signal: #D9E6F3;
+  --dark-signal-red: #FFADB5;
+  --dark-signal-yellow: #C6DBEB;
+  --dark-danger: #FFADB5;
+  --radius-card: 2;
+  --border-card: 1;
+  --radius-glass: 24;
+  --font-ui: Roboto, "Noto Sans CJK SC", sans-serif;
+  --font-mono: monospace;
+  --space-unit: 8;
+}
+
+.cp-button { --radius: 2; --border-width: 1; --border-color: line; }
+.cp-primary-button { --fill: accent; --foreground: on-accent; --border-color: accent; }
+.cp-secondary-button { --fill: surface; --foreground: ink; }
+.cp-text-button { --border-width: 0; --foreground: accent; }
+.cp-icon-button { --radius: 2; --border-width: 1; --border-color: line; }
+.cp-add-button { --radius: 2; --border-width: 1; --border-color: line; }
+.cp-filter-button { --radius: 2; --border-width: 1; --border-color: line; }
+.cp-segment-button { --radius: 2; --border-width: 1; --border-color: line; }
+.cp-agent-send { --fill: accent; --foreground: on-accent; --border-color: accent; }
+.cp-item-delete { --foreground: danger; --border-color: danger; }
+.cp-plan-confirm { --fill: accent; --foreground: on-accent; --border-color: accent; }
+.cp-panel { --radius: 2; --border-width: 1; --border-color: line; }
+.cp-field { --radius: 2; --border-width: 1; --border-color: line; }
+.cp-dialog { --radius: 2; --border-width: 1; --border-color: line; }

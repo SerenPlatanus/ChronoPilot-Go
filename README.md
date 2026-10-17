@@ -6,6 +6,10 @@
 
 内置 DeepSeek Agent 与本机 MCP 服务器。Agent 只安排已有事项，预计用时由用户填写；所有方案先展示，确认后才写入。支持流式回复、持久化多会话、明确填写的长期偏好，以及后续对话调整。
 
+- [本轮皮肤系统、缓存启动与刷新改造说明](docs/本轮改造说明-2026-10-18.md)
+- [自定义皮肤的类说明文档](docs/自定义皮肤的类说明文档.md) / [默认 CSS](assets/styles/default_style.css) / [按钮类清单](docs/按钮样式类清单.md)
+- [构成主义与瑞士主题、配色与预览](docs/艺术主题说明.md)
+- [前端 UI 与 CSS 主题约束（给艺术风格 Agent）](docs/前端UI与CSS主题约束.md) / [CSS 模板](docs/templates/theme.template.css)
 - [界面、学期筛选与主题开发说明](docs/界面与主题开发说明.md)
 - [Agent/MCP 使用、约束和接口](docs/Agent与MCP使用及验收.md)
 - [真机验收清单](docs/真机验收清单.md)

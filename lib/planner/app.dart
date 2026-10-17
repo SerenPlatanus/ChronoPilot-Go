@@ -1,3 +1,4 @@
+import '../ui/controls.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'item.dart';
@@ -20,7 +21,8 @@ import '../ui/countdown.dart';
 
 class PlannerApp extends StatefulWidget {
   final PlannerRepository? repository;
-  const PlannerApp({super.key, this.repository});
+  final bool restoreAccount;
+  const PlannerApp({super.key, this.repository, this.restoreAccount = false});
   @override
   State<PlannerApp> createState() => _PlannerAppState();
 }
@@ -41,7 +43,10 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
   void _startClock() {
     _clockTick?.cancel();
     _clockTick = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+        unawaited(refresh());
+      }
     });
   }
 
@@ -50,44 +55,61 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _startClock();
-    if (widget.repository != null) {
-      repo = widget.repository;
-      sync = SchoolSync(repo!, '', '');
-      chat = PlannerChat(repo!, refreshContext: () => sync!.refresh());
-      mcp = PlannerMcpServer(
-        PlannerTools(repo!),
-        refreshContext: () => sync!.refresh(),
-      );
-      repo!.addListener(changed);
-    } else {
-      unawaited(load());
-    }
+    if (widget.repository != null) _attach(widget.repository!);
+    if (widget.repository == null || widget.restoreAccount) unawaited(load());
+  }
+
+  void _attach(PlannerRepository r) {
+    repo = r;
+    sync = SchoolSync(r, username, password);
+    final accountSync = sync!;
+    chat = PlannerChat(r, refreshContext: () => accountSync.refresh());
+    mcp = PlannerMcpServer(
+      PlannerTools(r),
+      refreshContext: () => accountSync.refresh(),
+    );
+    r.addListener(changed);
   }
 
   Future<void> load() async {
     try {
-      username = await secureStore.read(key: 'planner_username') ?? '';
-      password = await secureStore.read(key: 'planner_password') ?? '';
-      apiKey = await secureStore.read(key: 'planner_deepseek_key') ?? '';
-      model = await secureStore.read(key: 'planner_model') ?? 'deepseek-flash';
-      final r = await PlannerRepository.open(
-        username.isEmpty ? 'local' : username,
-      );
+      final credentials = await Future.wait([
+        secureStore.read(key: 'planner_username'),
+        secureStore.read(key: 'planner_password'),
+        secureStore.read(key: 'planner_deepseek_key'),
+        secureStore.read(key: 'planner_model'),
+      ]);
+      if (!mounted) return;
+      username = credentials[0] ?? '';
+      password = credentials[1] ?? '';
+      apiKey = credentials[2] ?? '';
+      model = credentials[3] ?? 'deepseek-flash';
+      final scope = username.isEmpty ? 'local' : username;
+      final r = repo?.scope == scope
+          ? repo!
+          : await PlannerRepository.open(scope);
       if (!mounted) {
-        r.dispose();
+        if (!identical(r, repo)) r.dispose();
         return;
       }
-      repo = r;
-      sync = SchoolSync(r, username, password);
-      final accountSync = sync!;
-      chat = PlannerChat(r, refreshContext: () => accountSync.refresh());
-      mcp = PlannerMcpServer(
-        PlannerTools(r),
-        refreshContext: () => accountSync.refresh(),
-      );
-      r.addListener(changed);
+      sync?.dispose();
+      chat?.dispose();
+      await mcp?.stop();
+      mcp?.dispose();
+      if (!mounted) {
+        if (!identical(r, repo)) r.dispose();
+        return;
+      }
+      repo?.removeListener(changed);
+      if (!identical(r, repo)) repo?.dispose();
+      _attach(r);
       setState(() {});
-      unawaited(refresh());
+      await PlannerRepository.rememberAccount(scope);
+      // Cached content is already mounted; requests start after layout.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(refresh());
+      });
+      WidgetsBinding.instance.ensureVisualUpdate();
     } catch (_) {
       if (mounted) setState(() => failure = '无法读取本地数据。为避免覆盖原数据，初始化已停止。');
     }
@@ -98,6 +120,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
   }
 
   Future<void> refresh({bool force = false}) async {
+    if (sync == null || (!force && !sync!.shouldRefresh)) return;
     if (refreshing) {
       await sync?.refresh(force: force, interactive: force);
       return;
@@ -139,7 +162,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
   Future<void> settings() async {
     final accountChanged = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(
+      PilotPageRoute(
         builder: (_) => PlannerSettings(
           repo: repo!,
           mcp: mcp!,
@@ -177,7 +200,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
       return Scaffold(
         body: Center(
           child: failure == null
-              ? const CircularProgressIndicator()
+              ? const Text('正在读取本地数据')
               : Padding(
                   padding: const EdgeInsets.all(24),
                   child: Text(failure!),
@@ -239,34 +262,37 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
               title: Text(['接下来', '课表与日程', '事项', 'Agent'][tab]),
               actions: [
                 if (tab != 3)
-                  IconButton(
-                    tooltip: '筛选事项',
-                    icon: Icon(
-                      filtersOpen
-                          ? Icons.filter_alt
-                          : Icons.filter_alt_outlined,
+                  PilotControl(
+                    className: 'upcoming-filter',
+                    kind: 'icon-button',
+                    child: IconButton(
+                      tooltip: '筛选事项',
+                      icon: Icon(
+                        filtersOpen
+                            ? Icons.filter_alt
+                            : Icons.filter_alt_outlined,
+                      ),
+                      onPressed: () =>
+                          setState(() => filtersOpen = !filtersOpen),
                     ),
-                    onPressed: () => setState(() => filtersOpen = !filtersOpen),
                   ),
-                if (refreshing)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                else
-                  IconButton(
-                    onPressed: () => refresh(force: true),
-                    icon: const Icon(Icons.sync),
-                    tooltip: '更新学校数据',
+                PilotControl(
+                  className: 'school-refresh',
+                  kind: 'icon-button',
+                  child: IconButton(
+                    onPressed: refreshing ? null : () => refresh(force: true),
+                    icon: Icon(refreshing ? Icons.hourglass_top : Icons.sync),
+                    tooltip: refreshing ? '正在更新学校数据' : '更新学校数据',
                   ),
-                IconButton(
-                  onPressed: settings,
-                  icon: const Icon(Icons.settings_outlined),
-                  tooltip: '设置',
+                ),
+                PilotControl(
+                  className: 'open-settings',
+                  kind: 'icon-button',
+                  child: IconButton(
+                    onPressed: settings,
+                    icon: const Icon(Icons.settings_outlined),
+                    tooltip: '设置',
+                  ),
                 ),
                 const SizedBox(width: 8),
               ],
@@ -328,31 +354,36 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
                                         padding: const EdgeInsets.only(
                                           right: 6,
                                         ),
-                                        child: ChoiceChip(
-                                          label: Text(termLabel(t)),
-                                          selected: term == t,
-                                          onSelected: (_) => setState(() {
-                                            term = t;
-                                            subject = '';
-                                            final dates =
-                                                r.items
-                                                    .where(
-                                                      (e) =>
-                                                          inTerm(e, t) &&
-                                                          e.categoryId ==
-                                                              'course' &&
-                                                          e.start != null,
-                                                    )
-                                                    .map((e) => e.start!)
-                                                    .toList()
-                                                  ..sort();
-                                            if (t != academicTerm(now) &&
-                                                dates.isNotEmpty) {
-                                              day = dates.first;
-                                            } else if (t == academicTerm(now)) {
-                                              day = now;
-                                            }
-                                          }),
+                                        child: PilotControl(
+                                          className: 'semester-filter',
+                                          kind: 'filter-button',
+                                          child: ChoiceChip(
+                                            label: Text(termLabel(t)),
+                                            selected: term == t,
+                                            onSelected: (_) => setState(() {
+                                              term = t;
+                                              subject = '';
+                                              final dates =
+                                                  r.items
+                                                      .where(
+                                                        (e) =>
+                                                            inTerm(e, t) &&
+                                                            e.categoryId ==
+                                                                'course' &&
+                                                            e.start != null,
+                                                      )
+                                                      .map((e) => e.start!)
+                                                      .toList()
+                                                    ..sort();
+                                              if (t != academicTerm(now) &&
+                                                  dates.isNotEmpty) {
+                                                day = dates.first;
+                                              } else if (t ==
+                                                  academicTerm(now)) {
+                                                day = now;
+                                              }
+                                            }),
+                                          ),
                                         ),
                                       ),
                                   ],
@@ -364,7 +395,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
                                 items: filtered.toList(),
                                 onChanged: (date) => setState(() => day = date),
                                 onTimetable: () => Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
+                                  PilotPageRoute<void>(
                                     builder: (_) => LargeTimetable(
                                       items: filtered.toList(),
                                       initialDay: day,
@@ -380,6 +411,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
                                 subtitle: warnings.first,
                                 icon: Icons.warning_amber,
                                 onTap: () => showDialog<void>(
+                                  animationStyle: AnimationStyle.noAnimation,
                                   context: context,
                                   builder: (c) => AlertDialog(
                                     title: const Text('日程变化'),
@@ -387,9 +419,13 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
                                       child: Text(warnings.join('\n')),
                                     ),
                                     actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(c),
-                                        child: const Text('知道了'),
+                                      PilotControl(
+                                        className: 'sync-warning-close',
+                                        kind: 'text-button',
+                                        child: TextButton(
+                                          onPressed: () => Navigator.pop(c),
+                                          child: const Text('知道了'),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -470,11 +506,15 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
                                           padding: const EdgeInsets.only(
                                             left: 8,
                                           ),
-                                          child: FilterChip(
-                                            label: const Text('含已完成'),
-                                            selected: showCompleted,
-                                            onSelected: (value) => setState(
-                                              () => showCompleted = value,
+                                          child: PilotControl(
+                                            className: 'completed-filter',
+                                            kind: 'filter-button',
+                                            child: FilterChip(
+                                              label: const Text('含已完成'),
+                                              selected: showCompleted,
+                                              onSelected: (value) => setState(
+                                                () => showCompleted = value,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -525,10 +565,14 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
                             icon: tab == 1
                                 ? Icons.calendar_today_outlined
                                 : Icons.inventory_2_outlined,
-                            action: TextButton.icon(
-                              onPressed: () => editItem(context, r),
-                              icon: const Icon(Icons.add),
-                              label: const Text('添加事项'),
+                            action: PilotControl(
+                              className: 'empty-add',
+                              kind: 'text-button',
+                              child: TextButton.icon(
+                                onPressed: () => editItem(context, r),
+                                icon: const Icon(Icons.add),
+                                label: const Text('添加事项'),
+                              ),
                             ),
                           ),
                         ),
@@ -555,10 +599,14 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
       ),
       floatingActionButton: tab == 3
           ? null
-          : FloatingActionButton(
-              onPressed: () => editItem(context, r),
-              tooltip: '添加事项',
-              child: const Icon(Icons.add),
+          : PilotControl(
+              className: 'item-add',
+              kind: 'add-button',
+              child: FloatingActionButton(
+                onPressed: () => editItem(context, r),
+                tooltip: '添加事项',
+                child: const Icon(Icons.add),
+              ),
             ),
       bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
           ? null
@@ -569,17 +617,23 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
     );
   }
 
-  Widget _categoryChip(String id, String label, PilotVisuals v) => ChoiceChip(
-    label: Text(label),
-    selected: category == id,
-    labelStyle: v.cassette
-        ? TextStyle(
-            color: category == id ? (v.dark ? v.screen : Colors.white) : v.ink,
-            fontSize: 13,
-          )
-        : null,
-    selectedColor: v.cassette ? (v.dark ? v.accent : v.ink) : null,
-    onSelected: (_) => setState(() => category = id),
+  Widget _categoryChip(String id, String label, PilotVisuals v) => PilotControl(
+    className: 'category-filter',
+    kind: 'filter-button',
+    child: ChoiceChip(
+      label: Text(label),
+      selected: category == id,
+      labelStyle: v.cassette
+          ? TextStyle(
+              color: category == id
+                  ? (v.dark ? v.screen : Colors.white)
+                  : v.ink,
+              fontSize: 13,
+            )
+          : null,
+      selectedColor: v.cassette ? (v.dark ? v.accent : v.ink) : null,
+      onSelected: (_) => setState(() => category = id),
+    ),
   );
 }
 
@@ -598,7 +652,7 @@ class ItemTile extends StatelessWidget {
     final v = PilotVisuals.of(context), color = courseColor(item);
     return Material(
       color: v.surface,
-      borderRadius: BorderRadius.circular(18),
+      shape: v.shape('item-card'),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => editItem(context, repo, item),
@@ -613,10 +667,14 @@ class ItemTile extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 7, right: 10),
                     child: Container(
-                      width: 12,
-                      height: 12,
+                      width: 15,
+                      height: 15,
                       decoration: BoxDecoration(
                         color: color,
+                        border: Border.all(
+                          color: v.ink.withValues(alpha: .45),
+                          width: .7,
+                        ),
                         shape: BoxShape.circle,
                       ),
                     ),
