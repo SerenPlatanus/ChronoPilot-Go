@@ -7,19 +7,18 @@ import 'features.dart';
 import 'session_drawer.dart';
 import '../ui/eclipse_mark.dart';
 import '../ui/styles.dart';
+import '../ui/backdrop_settings.dart';
 
 class PlannerChatPage extends StatefulWidget {
   final PlannerChat chat;
   final String apiKey, model;
   final Future<void> Function() beforeSend;
-  final VoidCallback onSettings;
   const PlannerChatPage({
     super.key,
     required this.chat,
     required this.apiKey,
     required this.model,
     required this.beforeSend,
-    required this.onSettings,
   });
   @override
   State<PlannerChatPage> createState() => _PlannerChatPageState();
@@ -243,6 +242,8 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
       });
     }
     final busy = sending || widget.chat.busy, v = PilotVisuals.of(context);
+    final photo =
+        StyleScope.maybeOf(context)?.backdrop.kind == BackdropKind.wallpaper;
     return Stack(
       children: [
         Scaffold(
@@ -280,18 +281,6 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
                   tooltip: '新会话',
                   onPressed: busy ? null : () => newSession(),
                   icon: const Icon(Icons.add_comment_outlined),
-                ),
-              ),
-              PilotControl(
-                className: 'agent-settings',
-                kind: 'icon-button',
-                child: IconButton(
-                  style: const ButtonStyle(
-                    side: WidgetStatePropertyAll(BorderSide.none),
-                  ),
-                  tooltip: '设置',
-                  onPressed: widget.onSettings,
-                  icon: const Icon(Icons.settings_outlined),
                 ),
               ),
             ],
@@ -372,16 +361,22 @@ class _PlannerChatPageState extends State<PlannerChatPage> {
                                         12,
                                         0,
                                       ),
-                                      decoration: BoxDecoration(
-                                        color: v.surface,
-                                        borderRadius: BorderRadius.circular(
-                                          v.tokens?.controls.isNotEmpty == true
-                                              ? v.radius
-                                              : 18,
-                                        ),
+                                      decoration: v.decoration(
+                                        'message',
+                                        defaultWidth: 0,
+                                        defaultRadius: 18,
                                       ),
                                       child: content,
                                     ),
+                                  )
+                                : photo
+                                ? Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: v.decoration(
+                                      'message',
+                                      defaultWidth: 0,
+                                    ),
+                                    child: content,
                                   )
                                 : content,
                           );

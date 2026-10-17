@@ -34,8 +34,11 @@ class PilotControl extends StatelessWidget {
       'screen' => v.screen,
       'danger' => theme.colorScheme.error,
       'on-accent' => theme.colorScheme.onPrimary,
+      'calendar-surface' => v.namedColor('calendar-surface'),
+      'navigation-surface' => v.namedColor('navigation-surface'),
       _ => Colors.transparent,
     };
+    final opacity = double.tryParse(properties['opacity'] ?? '') ?? 1;
     final radius = double.tryParse(properties['radius'] ?? '24') ?? 24;
     final width = double.tryParse(properties['border-width'] ?? '0') ?? 0;
     final side = BorderSide(
@@ -58,7 +61,7 @@ class PilotControl extends StatelessWidget {
       backgroundColor: properties.containsKey('fill')
           ? WidgetStateProperty.resolveWith(
               (states) => color(properties['fill']!).withValues(
-                alpha: states.contains(WidgetState.disabled) ? .12 : 1,
+                alpha: states.contains(WidgetState.disabled) ? .12 : opacity,
               ),
             )
           : null,

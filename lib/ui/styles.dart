@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
+import 'backdrop_settings.dart';
 
 enum PilotStyle {
   defaultStyle('default', '默认主题', '原版布局 · 蓝色强调'),
-  cassetteFuture('cassette_future', '磁带未来主题', '纸面质感 · 荧光仪表'),
-  constructivist('constructivist', '构成主义', '暖纸 · 朱红 · 炭黑'),
-  swiss('swiss', '瑞士风格', '冷白 · 石墨灰 · 红色强调'),
-  custom('custom', '自定义皮肤', '自行编辑 CSS');
+  testAlpha('test_alpha', '测试主题alpha', '纸面质感 · 荧光仪表'),
+  testBeta('test_beta', '测试主题beta', '冷灰层次 · 清晰细线'),
+  custom('custom', '自定义主题', '自行编辑 CSS');
 
   final String id, label, description;
   const PilotStyle(this.id, this.label, this.description);
   String get asset =>
       'assets/styles/${this == defaultStyle ? 'default_style' : id}.css';
-  static PilotStyle parse(String? id) =>
-      values.firstWhere((v) => v.id == id, orElse: () => defaultStyle);
+  static PilotStyle parse(String? id) => switch (id) {
+    'cassette_future' => testAlpha,
+    'swiss' => testBeta,
+    _ => values.firstWhere((v) => v.id == id, orElse: () => defaultStyle),
+  };
 }
 
 /// Interprets root tokens and the restricted .cp-* control classes only.
@@ -64,9 +67,13 @@ class StyleTokens {
         ).firstMatch(declaration);
         if (entry == null) throw const FormatException('控件只支持 --radius 等自定义属性');
         final key = entry[1]!, value = entry[2]!.trim();
-        if (key == 'radius' || key == 'border-width') {
+        if (key == 'radius' || key == 'border-width' || key == 'opacity') {
           final n = double.tryParse(value);
-          final max = key == 'radius' ? 28 : 4;
+          final max = key == 'radius'
+              ? 28
+              : key == 'opacity'
+              ? 1
+              : 4;
           if (n == null || !n.isFinite || n < 0 || n > max) {
             throw FormatException('无效控件尺寸：$key');
           }
@@ -83,6 +90,8 @@ class StyleTokens {
             'screen',
             'danger',
             'on-accent',
+            'calendar-surface',
+            'navigation-surface',
             'transparent',
           ].contains(value)) {
             throw FormatException('无效控件颜色引用：$value');
@@ -118,6 +127,11 @@ class StyleTokens {
         result.color('$prefix$name');
       }
     }
+    for (final prefix in ['', 'dark-']) {
+      for (final key in ['calendar-surface', 'navigation-surface']) {
+        if (values.containsKey('$prefix$key')) result.color('$prefix$key');
+      }
+    }
     for (final key in ['radius-card', 'radius-glass', 'space-unit']) {
       result.number(key);
     }
@@ -151,6 +165,8 @@ class StyleController extends ChangeNotifier {
   final Future<void> Function(String)? brightnessWriter;
   bool saving = false;
   String? customCss;
+  BackdropSettings backdrop;
+  final Future<void> Function(String)? backdropWriter;
   final Future<void> Function(String)? customWriter;
   final Map<(PilotStyle, Brightness), ThemeData> _themes = {};
   StyleController({
@@ -161,6 +177,8 @@ class StyleController extends ChangeNotifier {
     this.brightnessWriter,
     this.customWriter,
     this.customCss,
+    this.backdrop = const BackdropSettings(),
+    this.backdropWriter,
   }) : _selected = selected,
        _brightness = brightness;
   PilotStyle get selected => _selected;
@@ -182,6 +200,8 @@ class StyleController extends ChangeNotifier {
     return StyleController(
       palettes: palettes,
       customCss: customCss,
+      backdrop: BackdropSettings.decode(box.get('backdrop')),
+      backdropWriter: (value) => box.put('backdrop', value),
       customWriter: (css) => box.put('custom-css', css),
       writer: (id) => box.put('style', id),
       selected: PilotStyle.parse(box.get('style')),
@@ -254,10 +274,93 @@ class StyleController extends ChangeNotifier {
     }
   }
 
-  ThemeData get theme => _themes.putIfAbsent((
-    _selected,
-    _brightness,
-  ), () => themeFor(palettes[_selected]!, brightness: _brightness));
+  Future<void> setBackdrop(BackdropSettings next) async {
+    if (saving) return;
+    if (!next.panelOpacity.isFinite ||
+        next.panelOpacity < .35 ||
+        next.panelOpacity > 1 ||
+        !next.veilOpacity.isFinite ||
+        next.veilOpacity < 0 ||
+        next.veilOpacity > 1) {
+      throw const FormatException('背景参数无效');
+    }
+    saving = true;
+    notifyListeners();
+    try {
+      await backdropWriter?.call(next.encode());
+      backdrop = next;
+      _themes.clear();
+    } finally {
+      saving = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> importWallpaper() async {
+    if (saving) return false;
+    saving = true;
+    notifyListeners();
+    String? imported;
+    final old = backdrop.filePath;
+    try {
+      imported = await WallpaperFiles.pick();
+      if (imported == null) return false;
+      final next = backdrop.copyWith(
+        kind: BackdropKind.wallpaper,
+        filePath: imported,
+        panelOpacity: backdrop.panelOpacity == 1 ? .9 : backdrop.panelOpacity,
+      );
+      await backdropWriter?.call(next.encode());
+      backdrop = next;
+      _themes.clear();
+      if (old != null && old != imported) {
+        try {
+          await WallpaperFiles.remove(old);
+        } catch (_) {
+          /* New wallpaper is already safely saved. */
+        }
+      }
+      return true;
+    } catch (_) {
+      if (imported != null) {
+        try {
+          await WallpaperFiles.remove(imported);
+        } catch (_) {}
+      }
+      rethrow;
+    } finally {
+      saving = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeWallpaper() async {
+    final old = backdrop.filePath;
+    await setBackdrop(
+      backdrop.copyWith(
+        clearFile: true,
+        kind: backdrop.kind == BackdropKind.wallpaper
+            ? BackdropKind.theme
+            : backdrop.kind,
+        panelOpacity: 1,
+      ),
+    );
+    if (old != null && backdrop.filePath == null) {
+      try {
+        await WallpaperFiles.remove(old);
+      } catch (_) {}
+    }
+  }
+
+  ThemeData get theme => _themes.putIfAbsent(
+    (_selected, _brightness),
+    () => themeFor(
+      palettes[_selected]!,
+      brightness: _brightness,
+      panelOpacity: backdrop.panelOpacity,
+      transparentBackground: true,
+    ),
+  );
 }
 
 class StyleScope extends InheritedNotifier<StyleController> {
@@ -272,15 +375,16 @@ class StyleScope extends InheritedNotifier<StyleController> {
 
 @immutable
 class PilotVisuals extends ThemeExtension<PilotVisuals> {
-  final bool cassette;
+  final bool alpha;
   final bool dark;
   final Color paper, surface, ink, muted, line, accent, stage, screen, signal;
   final Color signalRed, signalYellow;
   final double radius;
   final double borderWidth;
+  final double panelOpacity;
   final StyleTokens? tokens;
   const PilotVisuals({
-    required this.cassette,
+    required this.alpha,
     this.dark = false,
     required this.paper,
     required this.surface,
@@ -295,12 +399,13 @@ class PilotVisuals extends ThemeExtension<PilotVisuals> {
     this.signalYellow = const Color(0xfff4ed71),
     required this.radius,
     this.borderWidth = 1,
+    this.panelOpacity = 1,
     this.tokens,
   });
   static PilotVisuals of(BuildContext context) =>
       Theme.of(context).extension<PilotVisuals>() ??
       const PilotVisuals(
-        cassette: false,
+        alpha: false,
         paper: Color(0xfff6faf8),
         surface: Colors.white,
         ink: Color(0xff18201e),
@@ -322,8 +427,20 @@ class PilotVisuals extends ThemeExtension<PilotVisuals> {
     'screen' => screen,
     'danger' => tokens?.color(dark ? 'dark-danger' : 'danger') ?? signalRed,
     'on-accent' => dark ? screen : Colors.white,
+    'calendar-surface' => _regionColor('calendar-surface', .07),
+    'navigation-surface' => _regionColor('navigation-surface', .12),
     _ => Colors.transparent,
   };
+
+  Color _regionColor(String name, double alpha) {
+    final key = dark ? 'dark-$name' : name;
+    return tokens?.values.containsKey(key) == true
+        ? tokens!.color(key)
+        : Color.alphaBlend(ink.withValues(alpha: alpha), surface);
+  }
+
+  Color layerColor(Color color, {double opacity = 1}) =>
+      color.withValues(alpha: (color.a * panelOpacity * opacity).clamp(0, 1));
 
   BoxDecoration decoration(
     String className, {
@@ -340,9 +457,12 @@ class PilotVisuals extends ThemeExtension<PilotVisuals> {
         defaultWidth ??
         borderWidth;
     return BoxDecoration(
-      color: rules.containsKey('fill')
-          ? namedColor(rules['fill']!)
-          : fill ?? surface,
+      color: layerColor(
+        rules.containsKey('fill')
+            ? namedColor(rules['fill']!)
+            : fill ?? surface,
+        opacity: double.tryParse(rules['opacity'] ?? '') ?? 1,
+      ),
       borderRadius: BorderRadius.circular(
         double.tryParse(rules['radius'] ?? '') ?? defaultRadius ?? radius,
       ),
@@ -385,17 +505,23 @@ TextStyle instrumentText({
   fontFeatures: const [FontFeature.tabularFigures()],
   letterSpacing: .4,
 );
-ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
+ThemeData themeFor(
+  StyleTokens t, {
+  Brightness brightness = Brightness.light,
+  double panelOpacity = 1,
+  bool transparentBackground = false,
+}) {
   final dark = brightness == Brightness.dark;
   Color color(String name) => t.color(dark ? 'dark-$name' : name);
-  final cassette = t.style == PilotStyle.cassetteFuture;
+  final alpha = t.style == PilotStyle.testAlpha;
   final base = ThemeData(
     useMaterial3: true,
     colorSchemeSeed: t.color('seed'),
     brightness: brightness,
   );
   final visuals = PilotVisuals(
-    cassette: cassette,
+    alpha: alpha,
+    panelOpacity: panelOpacity,
     dark: dark,
     paper: color('paper'),
     surface: color('surface'),
@@ -444,7 +570,9 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
         TargetPlatform.iOS: ImmediatePageTransitions(),
       },
     ),
-    scaffoldBackgroundColor: visuals.paper,
+    scaffoldBackgroundColor: transparentBackground
+        ? Colors.transparent
+        : visuals.paper,
     extensions: [visuals],
     textTheme: base.textTheme
         .apply(bodyColor: visuals.ink, displayColor: visuals.ink)
@@ -474,7 +602,7 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
           ),
         ),
     appBarTheme: AppBarTheme(
-      backgroundColor: visuals.paper,
+      backgroundColor: visuals.decoration('appbar', fill: visuals.paper).color,
       foregroundColor: visuals.ink,
       scrolledUnderElevation: 0,
       centerTitle: false,
@@ -493,11 +621,7 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(
-          t.style == PilotStyle.constructivist
-              ? 0
-              : t.style == PilotStyle.swiss
-              ? 2
-              : 8,
+          t.style == PilotStyle.testBeta ? 2 : 8,
         ),
         side: BorderSide(
           color: visuals.borderWidth > 1 ? visuals.ink : visuals.line,
@@ -521,8 +645,8 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
       errorMaxLines: 3,
     ),
     chipTheme: base.chipTheme.copyWith(
-      backgroundColor: visuals.paper,
-      selectedColor: visuals.stage,
+      backgroundColor: visuals.layerColor(visuals.paper),
+      selectedColor: visuals.layerColor(visuals.stage),
       showCheckmark: false,
       labelStyle: base.textTheme.labelLarge!.copyWith(
         inherit: false,
@@ -536,11 +660,7 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
       ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(
-          t.style == PilotStyle.constructivist
-              ? 0
-              : t.style == PilotStyle.swiss
-              ? 2
-              : 24,
+          t.style == PilotStyle.testBeta ? 2 : 24,
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -594,11 +714,11 @@ ThemeData themeFor(StyleTokens t, {Brightness brightness = Brightness.light}) {
       thickness: 1,
     ),
     dialogTheme: DialogThemeData(
-      backgroundColor: visuals.surface,
+      backgroundColor: visuals.decoration('dialog').color,
       shape: visuals.shape('dialog', defaultRadius: 24),
     ),
     bottomSheetTheme: BottomSheetThemeData(
-      backgroundColor: visuals.surface,
+      backgroundColor: visuals.decoration('dialog').color,
       shape: visuals.shape('dialog', defaultRadius: 24),
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(

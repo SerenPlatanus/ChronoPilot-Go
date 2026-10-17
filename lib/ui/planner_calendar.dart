@@ -39,6 +39,7 @@ class _PlannerCalendarState extends State<PlannerCalendar> {
   @override
   Widget build(BuildContext context) {
     final d = widget.day, v = PilotVisuals.of(context);
+    final calendarMuted = v.dark ? v.muted : v.ink.withValues(alpha: .75);
     final first = month
         ? DateTime(d.year, d.month, 1)
         : DateTime(d.year, d.month, d.day - d.weekday + 1);
@@ -91,156 +92,174 @@ class _PlannerCalendarState extends State<PlannerCalendar> {
             ),
           ],
         ),
-        Row(
-          children: [
-            PilotControl(
-              className: 'month-previous',
-              kind: 'icon-button',
-              child: IconButton(
-                tooltip: month ? '上个月' : '上一周',
-                onPressed: () => widget.onChanged(
-                  month
-                      ? DateTime(d.year, d.month - 1, 1)
-                      : d.subtract(const Duration(days: 7)),
-                ),
-                icon: const Icon(Icons.chevron_left),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                '${d.month}月${d.day}日',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: v.muted, fontSize: 13),
-              ),
-            ),
-            PilotControl(
-              className: 'month-next',
-              kind: 'icon-button',
-              child: IconButton(
-                tooltip: month ? '下个月' : '下一周',
-                onPressed: () => widget.onChanged(
-                  month
-                      ? DateTime(d.year, d.month + 1, 1)
-                      : d.add(const Duration(days: 7)),
-                ),
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ),
-          ],
-        ),
-        Row(
-          children: List.generate(
-            7,
-            (i) => Expanded(
-              child: Center(
-                child: Text(
-                  '一二三四五六日'[i],
-                  style: TextStyle(color: v.muted, fontSize: 13),
-                ),
-              ),
-            ),
+        Container(
+          key: const ValueKey('calendar-panel'),
+          decoration: v.decoration(
+            'calendar-panel',
+            fill: v.namedColor('calendar-surface'),
           ),
-        ),
-        for (var row = 0; row < rows; row++)
-          Row(
-            children: List.generate(7, (col) {
-              final date = DateTime(
-                begin.year,
-                begin.month,
-                begin.day + row * 7 + col,
-              );
-              final selected = sameDay(date, d),
-                  today = sameDay(date, DateTime.now());
-              final colors = onDay(
-                widget.items,
-                DateTime(date.year, date.month, date.day),
-              ).map(courseColor).toSet().take(4).toList();
-              return Expanded(
-                child: Semantics(
-                  selected: selected,
-                  label: '${date.month}月${date.day}日',
-                  child: InkWell(
-                    onTap: () => widget.onChanged(date),
-                    borderRadius: BorderRadius.circular(24),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 7),
-                      child: Column(
-                        children: [
-                          SizedBox(
-                            width: 36,
-                            height: 36,
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              alignment: Alignment.center,
+          clipBehavior: Clip.antiAlias,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  PilotControl(
+                    className: 'month-previous',
+                    kind: 'icon-button',
+                    child: IconButton(
+                      tooltip: month ? '上个月' : '上一周',
+                      onPressed: () => widget.onChanged(
+                        month
+                            ? DateTime(d.year, d.month - 1, 1)
+                            : d.subtract(const Duration(days: 7)),
+                      ),
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${d.month}月${d.day}日',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: calendarMuted, fontSize: 13),
+                    ),
+                  ),
+                  PilotControl(
+                    className: 'month-next',
+                    kind: 'icon-button',
+                    child: IconButton(
+                      tooltip: month ? '下个月' : '下一周',
+                      onPressed: () => widget.onChanged(
+                        month
+                            ? DateTime(d.year, d.month + 1, 1)
+                            : d.add(const Duration(days: 7)),
+                      ),
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: List.generate(
+                  7,
+                  (i) => Expanded(
+                    child: Center(
+                      child: Text(
+                        '一二三四五六日'[i],
+                        style: TextStyle(color: calendarMuted, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              for (var row = 0; row < rows; row++)
+                Row(
+                  children: List.generate(7, (col) {
+                    final date = DateTime(
+                      begin.year,
+                      begin.month,
+                      begin.day + row * 7 + col,
+                    );
+                    final selected = sameDay(date, d),
+                        today = sameDay(date, DateTime.now());
+                    final colors = onDay(
+                      widget.items,
+                      DateTime(date.year, date.month, date.day),
+                    ).map(courseColor).toSet().take(4).toList();
+                    return Expanded(
+                      child: Semantics(
+                        selected: selected,
+                        label: '${date.month}月${date.day}日',
+                        child: InkWell(
+                          onTap: () => widget.onChanged(date),
+                          borderRadius: BorderRadius.circular(24),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 7),
+                            child: Column(
                               children: [
-                                Positioned.fill(
-                                  child: Transform.translate(
-                                    // Center the disc on the digits' visible ink,
-                                    // rather than the font's ascent/descent box.
-                                    offset: const Offset(0, 2),
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: selected
-                                            ? v.accent
-                                            : today
-                                            ? v.line
-                                            : Colors.transparent,
+                                SizedBox(
+                                  width: 36,
+                                  height: 36,
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    alignment: Alignment.center,
+                                    children: [
+                                      Positioned.fill(
+                                        child: Transform.translate(
+                                          // Center the disc on the digits' visible ink,
+                                          // rather than the font's ascent/descent box.
+                                          offset: const Offset(0, 2),
+                                          child: DecoratedBox(
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: selected
+                                                  ? v.accent
+                                                  : today
+                                                  ? v.line
+                                                  : Colors.transparent,
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                    ),
+                                      Text(
+                                        '${date.day}',
+                                        style: TextStyle(
+                                          fontSize: 19,
+                                          color: selected
+                                              ? Theme.of(
+                                                  context,
+                                                ).colorScheme.onPrimary
+                                              : date.month != d.month
+                                              ? calendarMuted.withValues(
+                                                  alpha: .5,
+                                                )
+                                              : v.ink,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                Text(
-                                  '${date.day}',
-                                  style: TextStyle(
-                                    fontSize: 19,
-                                    color: selected
-                                        ? Theme.of(
-                                            context,
-                                          ).colorScheme.onPrimary
-                                        : date.month != d.month
-                                        ? v.muted.withValues(alpha: .5)
-                                        : v.ink,
+                                const SizedBox(height: 4),
+                                SizedBox(
+                                  height: 8,
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: colors
+                                        .map(
+                                          (c) => Container(
+                                            width: 7,
+                                            height: 7,
+                                            margin: const EdgeInsets.symmetric(
+                                              horizontal: 1,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: c,
+                                              border: Border.all(
+                                                color: v.ink.withValues(
+                                                  alpha: .45,
+                                                ),
+                                                width: .6,
+                                              ),
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          SizedBox(
-                            height: 8,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: colors
-                                  .map(
-                                    (c) => Container(
-                                      width: 7,
-                                      height: 7,
-                                      margin: const EdgeInsets.symmetric(
-                                        horizontal: 1,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: c,
-                                        border: Border.all(
-                                          color: v.ink.withValues(alpha: .45),
-                                          width: .6,
-                                        ),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  }),
                 ),
-              );
-            }),
+              const SizedBox(height: 6),
+            ],
           ),
-        const SizedBox(height: 14),
+        ),
+        const SizedBox(height: 8),
       ],
     );
   }

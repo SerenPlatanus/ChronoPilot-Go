@@ -67,7 +67,7 @@ class SessionDrawer extends StatelessWidget {
     }
     return Drawer(
       width: (MediaQuery.sizeOf(context).width * .84).clamp(240, 360),
-      backgroundColor: v.surface,
+      backgroundColor: v.decoration('drawer').color,
       shape: v.shape('drawer'),
       elevation: 0,
       clipBehavior: Clip.antiAlias,

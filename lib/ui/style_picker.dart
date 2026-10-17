@@ -72,9 +72,14 @@ class _StylePickerState extends State<StylePicker> {
               selected: controller?.selected == style,
               label: style.label,
               child: Material(
-                color: controller?.selected == style
-                    ? v.stage.withValues(alpha: .24)
-                    : v.surface,
+                color: v.layerColor(
+                  controller?.selected == style
+                      ? Color.alphaBlend(
+                          v.stage.withValues(alpha: .24),
+                          v.surface,
+                        )
+                      : v.surface,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(v.radius),
                   side: BorderSide(

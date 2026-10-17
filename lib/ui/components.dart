@@ -1,8 +1,11 @@
 import 'dart:math' as math;
+import 'dart:io';
 import 'dart:ui' show PointMode;
 import 'package:flutter/material.dart';
 import '../planner/item.dart';
 import 'styles.dart';
+import 'controls.dart';
+import 'backdrop_settings.dart';
 
 class ContentFrame extends StatelessWidget {
   final Widget child;
@@ -40,7 +43,11 @@ class SectionHeading extends StatelessWidget {
         style: TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w600,
-          color: v.muted,
+          color:
+              StyleScope.maybeOf(context)?.backdrop.kind ==
+                  BackdropKind.wallpaper
+              ? v.ink
+              : v.muted,
         ),
       ),
     );
@@ -131,7 +138,7 @@ class NoticePanel extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: v.cassette
+        color: v.alpha
             ? (v.dark ? v.surface : const Color(0xffe3dccb))
             : Theme.of(context).colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(v.radius),
@@ -151,6 +158,80 @@ class NoticePanel extends StatelessWidget {
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 4,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One compact, dismissible startup reminder. Visibility is owned by PlannerApp,
+/// so tabs and subsequent sync notifications cannot recreate a dismissed hint.
+class RefreshHint extends StatelessWidget {
+  final VoidCallback onRefresh, onDismiss;
+  const RefreshHint({
+    super.key,
+    required this.onRefresh,
+    required this.onDismiss,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final v = PilotVisuals.of(context);
+    final d = v.decoration('sync-hint', fill: v.namedColor('calendar-surface'));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Dismissible(
+        key: const ValueKey('startup-sync-hint'),
+        direction: DismissDirection.horizontal,
+        resizeDuration: null,
+        movementDuration: Duration.zero,
+        onDismissed: (_) => onDismiss(),
+        child: Material(
+          color: d.color,
+          shape: RoundedRectangleBorder(
+            borderRadius: d.borderRadius!,
+            side: (d.border! as Border).top,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            children: [
+              const SizedBox(width: 12),
+              Icon(Icons.cloud_off_outlined, size: 18, color: v.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: InkWell(
+                  onTap: onRefresh,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 48),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '学校数据未更新，点此刷新',
+                        maxLines: 2,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.4,
+                          color: v.ink,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              PilotControl(
+                className: 'sync-hint-dismiss',
+                kind: 'icon-button',
+                child: IconButton(
+                  tooltip: '关闭刷新提示',
+                  onPressed: onDismiss,
+                  icon: const Icon(Icons.close, size: 16),
+                  style: const ButtonStyle(
+                    side: WidgetStatePropertyAll(BorderSide.none),
+                    backgroundColor: WidgetStatePropertyAll(Colors.transparent),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -206,7 +287,7 @@ class GlassControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = PilotVisuals.of(context);
-    if (!v.cassette) return child;
+    if (!v.alpha) return child;
     return DecoratedBox(decoration: v.decoration('glass'), child: child);
   }
 }
@@ -222,52 +303,108 @@ class PilotNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = PilotVisuals.of(context);
-    return BottomNavigationBar(
-      type: BottomNavigationBarType.fixed,
-      currentIndex: selected,
-      onTap: onChanged,
-      backgroundColor: v.dark ? const Color(0xff101010) : v.surface,
-      selectedItemColor: v.accent,
-      unselectedItemColor: v.muted,
-      elevation: 0,
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.schedule), label: '接下来'),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.calendar_month_outlined),
-          label: '课表',
+    final decoration = v.decoration(
+      'navigation',
+      fill: v.namedColor('navigation-surface'),
+      defaultRadius: 0,
+    );
+    final side = (decoration.border! as Border).top;
+    return DecoratedBox(
+      key: const ValueKey('navigation-region'),
+      decoration: decoration.copyWith(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.zero,
+        border: Border(top: side),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(top: side.width),
+        child: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          currentIndex: selected,
+          onTap: onChanged,
+          backgroundColor: decoration.color,
+          selectedItemColor:
+              v.tokens?.controls['navigation']?['foreground'] != null
+              ? v.namedColor(v.tokens!.controls['navigation']!['foreground']!)
+              : v.dark
+              ? v.accent
+              : Color.lerp(v.accent, v.ink, .3),
+          unselectedItemColor: v.dark ? v.muted : v.ink.withValues(alpha: .75),
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.schedule), label: '接下来'),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.calendar_month_outlined),
+              label: '课表',
+            ),
+            BottomNavigationBarItem(icon: Icon(Icons.checklist), label: '事项'),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.auto_awesome_outlined),
+              label: 'Agent',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.settings_outlined),
+              label: '设置',
+            ),
+          ],
         ),
-        BottomNavigationBarItem(icon: Icon(Icons.checklist), label: '事项'),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.auto_awesome_outlined),
-          label: 'Agent',
-        ),
-      ],
+      ),
     );
   }
 }
 
-/// Grain is a cached background layer. It never animates or intercepts touches.
-class PaperCanvas extends StatelessWidget {
+/// One background beneath the Navigator; page content never repaints the grain.
+class AppBackdrop extends StatelessWidget {
   final Widget child;
-  const PaperCanvas({super.key, required this.child});
+  const AppBackdrop({super.key, required this.child});
   @override
   Widget build(BuildContext context) {
     final v = PilotVisuals.of(context);
-    if (!v.cassette) return child;
+    final settings =
+        StyleScope.maybeOf(context)?.backdrop ?? const BackdropSettings();
+    final photo =
+        settings.kind == BackdropKind.wallpaper && settings.filePath != null;
+    final textured =
+        settings.kind == BackdropKind.paper ||
+        (settings.kind == BackdropKind.theme && v.alpha);
+    final decodeWidth =
+        (MediaQuery.sizeOf(context).width *
+                MediaQuery.devicePixelRatioOf(context))
+            .round()
+            .clamp(1, 1440);
     return Stack(
-      fit: StackFit.passthrough,
+      fit: StackFit.expand,
       children: [
         Positioned.fill(
           child: IgnorePointer(
             child: RepaintBoundary(
-              child: CustomPaint(
-                painter: _PaperGrain(
-                  v.paper,
-                  v.ink,
-                  !MediaQuery.highContrastOf(context),
-                  v.dark,
-                  v.accent,
-                ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ColoredBox(color: v.paper),
+                  if (textured)
+                    CustomPaint(
+                      painter: _PaperGrain(
+                        v.paper,
+                        v.ink,
+                        !MediaQuery.highContrastOf(context),
+                        v.dark,
+                        v.accent,
+                      ),
+                    ),
+                  if (photo)
+                    Image.file(
+                      File(settings.filePath!),
+                      cacheWidth: decodeWidth,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, __, ___) => ColoredBox(color: v.paper),
+                    ),
+                  if (photo)
+                    ColoredBox(
+                      color: v.paper.withValues(alpha: settings.veilOpacity),
+                    ),
+                ],
               ),
             ),
           ),
@@ -278,6 +415,14 @@ class PaperCanvas extends StatelessWidget {
   }
 }
 
+/// Retained as the page content boundary; wallpaper lives in AppBackdrop only.
+class PaperCanvas extends StatelessWidget {
+  final Widget child;
+  const PaperCanvas({super.key, required this.child});
+  @override
+  Widget build(BuildContext context) => child;
+}
+
 class _PaperGrain extends CustomPainter {
   final Color paper, ink;
   final bool textured, dark;
@@ -286,13 +431,13 @@ class _PaperGrain extends CustomPainter {
   static final dots = () {
     final random = math.Random(70);
     return List.generate(
-      1000,
+      1250,
       (_) => Offset(random.nextDouble() * 160, random.nextDouble() * 160),
     );
   }();
   static final fibres = () {
     final random = math.Random(1970);
-    return List.generate(32, (_) {
+    return List.generate(48, (_) {
       final x = random.nextDouble() * 160, y = random.nextDouble() * 160;
       return [
         Offset(x, y),
@@ -322,14 +467,14 @@ class _PaperGrain extends CustomPainter {
     canvas.save();
     canvas.clipRect(Offset.zero & size);
     final inkDots = Paint()
-      ..color = ink.withValues(alpha: .14)
-      ..strokeWidth = .7;
+      ..color = ink.withValues(alpha: .18)
+      ..strokeWidth = .85;
     final light = Paint()
-      ..color = Colors.white.withValues(alpha: .5)
+      ..color = Colors.white.withValues(alpha: .54)
       ..strokeWidth = .8;
     final fibre = Paint()
-      ..color = ink.withValues(alpha: .045)
-      ..strokeWidth = .5;
+      ..color = ink.withValues(alpha: .075)
+      ..strokeWidth = .65;
     for (double y = 0; y < size.height; y += 160) {
       for (double x = 0; x < size.width; x += 160) {
         canvas.save();

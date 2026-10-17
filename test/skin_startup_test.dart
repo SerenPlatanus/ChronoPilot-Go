@@ -9,6 +9,7 @@ import 'package:celechron/planner/item.dart';
 import 'package:celechron/planner/repository.dart';
 import 'package:celechron/planner/school_sync.dart';
 import 'package:celechron/ui/styles.dart';
+import 'package:celechron/ui/backdrop_settings.dart';
 import 'package:celechron/ui/skin_editor.dart';
 import 'package:celechron/ui/course_color.dart';
 
@@ -46,6 +47,23 @@ void main() {
       '3',
     );
     expect(identical(loaded.theme, loaded.theme), isTrue);
+  });
+
+  test('背景模式与面板透明度使用独立本地偏好，重启可恢复', () async {
+    final controller = await StyleController.load();
+    final old = controller.backdrop;
+    await controller.setBackdrop(
+      const BackdropSettings(
+        kind: BackdropKind.paper,
+        panelOpacity: .82,
+        veilOpacity: .5,
+      ),
+    );
+    final restored = await StyleController.load();
+    expect(restored.backdrop.kind, BackdropKind.paper);
+    expect(restored.backdrop.panelOpacity, .82);
+    expect(restored.backdrop.veilOpacity, .5);
+    await restored.setBackdrop(old);
   });
 
   test('非法浅深色与超长 CSS 不会覆盖已生效皮肤', () async {

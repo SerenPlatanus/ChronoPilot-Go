@@ -102,7 +102,6 @@ $\thiscommanddoesnotexist{a}$
           apiKey: '',
           model: 'test',
           beforeSend: () async {},
-          onSettings: () {},
         ),
       ),
     );

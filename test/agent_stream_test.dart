@@ -27,7 +27,6 @@ void main() {
           apiKey: 'test',
           model: 'test',
           beforeSend: () async {},
-          onSettings: () {},
         ),
       ),
     );

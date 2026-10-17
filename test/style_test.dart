@@ -15,6 +15,7 @@ import 'package:celechron/planner/agent_tools.dart';
 import 'package:celechron/planner/repository.dart';
 import 'package:celechron/planner/settings_page.dart';
 import 'package:celechron/ui/styles.dart';
+import 'package:celechron/ui/backdrop_settings.dart';
 import 'package:celechron/ui/controls.dart';
 
 const previews = bool.fromEnvironment('UI_PREVIEWS');
@@ -71,6 +72,15 @@ Future<PlannerRepository> seed() async {
       categoryId: 'task',
       title: '读完软件工程课的需求分析材料，并整理重点与疑问',
       estimatedMinutes: 45,
+    ),
+  );
+  await r.saveItem(
+    Item(
+      id: 'preview-homework',
+      categoryId: 'homework',
+      title: '2.31, 2.36',
+      subject: '计算机系统原理',
+      deadline: now.add(const Duration(hours: 2)),
     ),
   );
   final monday = day.subtract(Duration(days: day.weekday - 1));
@@ -138,7 +148,7 @@ void main() {
   test('全部 CSS 都可读取；默认使用原版蓝色强调', () {
     expect(palettes.length, PilotStyle.values.length);
     expect(
-      palettes[PilotStyle.cassetteFuture]!.color('paper'),
+      palettes[PilotStyle.testAlpha]!.color('paper'),
       const Color(0xffe9e3d4),
     );
     expect(
@@ -153,32 +163,41 @@ void main() {
       throwsFormatException,
     );
     expect(PilotStyle.parse('unknown'), PilotStyle.defaultStyle);
+    expect(PilotStyle.parse('cassette_future'), PilotStyle.testAlpha);
+    expect(PilotStyle.parse('swiss'), PilotStyle.testBeta);
+    expect(PilotStyle.parse('constructivist'), PilotStyle.defaultStyle);
+    expect(PilotStyle.values.map((v) => v.label).toList(), [
+      '默认主题',
+      '测试主题alpha',
+      '测试主题beta',
+      '自定义主题',
+    ]);
   });
   test('控件规则拒绝越界尺寸和未知颜色，忽略注释', () async {
-    final css = await rootBundle.loadString(PilotStyle.constructivist.asset);
+    final css = await rootBundle.loadString(PilotStyle.testAlpha.asset);
     expect(
       () => StyleTokens.fromCss(
-        PilotStyle.constructivist,
+        PilotStyle.testAlpha,
         '$css\n.cp-agent-send { --border-width: 9; }',
       ),
       throwsFormatException,
     );
     expect(
       () => StyleTokens.fromCss(
-        PilotStyle.constructivist,
+        PilotStyle.testAlpha,
         '$css\n.cp-agent-send { --fill: unknown; }',
       ),
       throwsFormatException,
     );
     expect(
       StyleTokens.fromCss(
-        PilotStyle.constructivist,
+        PilotStyle.testAlpha,
         '$css\n/* .cp-bogus { --radius: 999; } */',
       ).controls.containsKey('bogus'),
       isFalse,
     );
   });
-  for (final style in [PilotStyle.constructivist, PilotStyle.swiss]) {
+  for (final style in [PilotStyle.testBeta]) {
     for (final brightness in Brightness.values) {
       testWidgets('${style.id} ${brightness.name} 独立按钮类、边框与操作状态生效', (
         tester,
@@ -213,12 +232,12 @@ void main() {
         final theme = Theme.of(context),
             button = IconButtonTheme.of(context).style!;
         final side = button.side!.resolve({})!;
-        expect(side.width, style == PilotStyle.constructivist ? 2 : 1);
+        expect(side.width, 1);
         // The action class overrides icon-button's ink outline with accent.
         expect(side.color, theme.colorScheme.primary);
         expect(
           (button.shape!.resolve({})! as RoundedRectangleBorder).borderRadius,
-          BorderRadius.circular(style == PilotStyle.constructivist ? 0 : 2),
+          BorderRadius.circular(2),
         );
         expect(
           button.foregroundColor!.resolve({}),
@@ -250,25 +269,22 @@ void main() {
         saved = id;
       },
     );
-    await controller.select(PilotStyle.cassetteFuture);
-    expect(saved, 'cassette_future');
-    expect(controller.selected, PilotStyle.cassetteFuture);
+    await controller.select(PilotStyle.testAlpha);
+    expect(saved, 'test_alpha');
+    expect(controller.selected, PilotStyle.testAlpha);
     final reopened = StyleController(
       palettes: palettes,
       writer: (_) async {},
       selected: PilotStyle.parse(saved),
     );
-    expect(reopened.selected, PilotStyle.cassetteFuture);
+    expect(reopened.selected, PilotStyle.testAlpha);
     final broken = StyleController(
       palettes: palettes,
       writer: (_) async {
         throw Exception('storage');
       },
     );
-    await expectLater(
-      broken.select(PilotStyle.cassetteFuture),
-      throwsException,
-    );
+    await expectLater(broken.select(PilotStyle.testAlpha), throwsException);
     expect(broken.selected, PilotStyle.defaultStyle);
     expect(broken.saving, isFalse);
   });
@@ -277,19 +293,19 @@ void main() {
     Hive.init(temp.path);
     try {
       final first = await StyleController.load();
-      await first.select(PilotStyle.constructivist);
+      await first.select(PilotStyle.testAlpha);
       await first.selectBrightness(Brightness.dark);
       first.dispose();
       await Hive.box<String>('ui_preferences_v1').close();
       final reopened = await StyleController.load();
-      expect(reopened.selected, PilotStyle.constructivist);
+      expect(reopened.selected, PilotStyle.testAlpha);
       expect(reopened.brightness, Brightness.dark);
-      await reopened.select(PilotStyle.swiss);
+      await reopened.select(PilotStyle.testBeta);
       expect(reopened.brightness, Brightness.dark);
       reopened.dispose();
       await Hive.box<String>('ui_preferences_v1').close();
       final third = await StyleController.load();
-      expect(third.selected, PilotStyle.swiss);
+      expect(third.selected, PilotStyle.testBeta);
       expect(third.brightness, Brightness.dark);
       third.dispose();
       await Hive.box<String>('ui_preferences_v1').close();
@@ -308,13 +324,13 @@ void main() {
     );
     await tester.pumpWidget(ChronoPilotRoot(styles: controller, repository: r));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('设置'));
+    await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
     final state = tester.state(find.byType(PlannerSettings));
-    await tester.tap(find.byKey(const ValueKey('style-cassette_future')));
+    await tester.tap(find.byKey(const ValueKey('style-test_alpha')));
     await tester.pumpAndSettle();
-    expect(saved, 'cassette_future');
-    for (final style in [PilotStyle.constructivist, PilotStyle.swiss]) {
+    expect(saved, 'test_alpha');
+    for (final style in [PilotStyle.testBeta]) {
       await tester.ensureVisible(find.byKey(ValueKey('style-${style.id}')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(ValueKey('style-${style.id}')));
@@ -330,10 +346,10 @@ void main() {
 
     expect(tester.state(find.byType(PlannerSettings)), same(state));
     final context = tester.element(find.byType(PlannerSettings));
-    expect(controller.selected, PilotStyle.swiss);
+    expect(controller.selected, PilotStyle.testBeta);
     expect(
       PilotVisuals.of(context).accent,
-      palettes[PilotStyle.swiss]!.color('dark-accent'),
+      palettes[PilotStyle.testBeta]!.color('dark-accent'),
     );
     await tester.scrollUntilVisible(
       find.text('MCP 服务器'),
@@ -350,7 +366,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
   });
-  for (final style in [PilotStyle.constructivist, PilotStyle.swiss]) {
+  for (final style in [PilotStyle.testBeta]) {
     for (final brightness in Brightness.values) {
       test('${style.id} ${brightness.name} 关键文字与控件对比度', () {
         final theme = themeFor(palettes[style]!, brightness: brightness),
@@ -429,7 +445,7 @@ void main() {
               await tester.pumpAndSettle();
               expect(tester.takeException(), isNull);
             }
-            await tester.tap(find.byTooltip('设置'));
+            await tester.tap(find.byIcon(Icons.settings_outlined));
             await tester.pumpAndSettle();
             expect(tester.takeException(), isNull);
             await tester.pumpWidget(const SizedBox());
@@ -449,7 +465,7 @@ void main() {
       final controller = StyleController(
         palettes: palettes,
         writer: (_) async {},
-        selected: PilotStyle.cassetteFuture,
+        selected: PilotStyle.testAlpha,
       );
       final boundary = GlobalKey();
       await tester.pumpWidget(
@@ -474,26 +490,32 @@ void main() {
         });
       }
 
-      await shot('cassette-today');
+      await shot('test-alpha-today');
+      await r.mergeSchool('preview-sync', [], fresh: false, error: '测试缓存状态');
+      await tester.pumpAndSettle();
+      await shot('test-alpha-startup-hint');
+      await tester.tap(find.byTooltip('关闭刷新提示'));
+      await tester.pumpAndSettle();
+      await shot('test-alpha-compact-upcoming');
       await tester.tap(find.byIcon(Icons.calendar_month_outlined));
       await tester.pumpAndSettle();
-      await shot('cassette-timetable');
+      await shot('test-alpha-timetable');
       await tester.tap(find.byTooltip('大课表'));
       await tester.pumpAndSettle();
-      await shot('cassette-large-timetable');
+      await shot('test-alpha-large-timetable');
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.checklist));
       await tester.pumpAndSettle();
-      await shot('cassette-tasks');
+      await shot('test-alpha-tasks');
       await tester.tap(find.byType(FloatingActionButton));
       await tester.pumpAndSettle();
-      await shot('cassette-editor');
+      await shot('test-alpha-editor');
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.auto_awesome_outlined));
       await tester.pumpAndSettle();
-      await shot('cassette-agent');
+      await shot('test-alpha-agent');
       final tomorrow = DateTime.now().add(const Duration(days: 1));
       final start = DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 10);
       final plan = PlannerTools(r).draft({
@@ -522,7 +544,7 @@ void main() {
         ],
       });
       await tester.pumpAndSettle();
-      await shot('cassette-agent-plan');
+      await shot('test-alpha-agent-plan');
       for (var i = 0; i < 8; i++) {
         await r.saveSession({
           'id': 'history-$i',
@@ -536,35 +558,33 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('历史对话'));
       await tester.pumpAndSettle();
-      await shot('cassette-agent-history');
+      await shot('test-alpha-agent-history');
       await tester.tap(find.byTooltip('关闭对话列表'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('设置'));
+      await tester.tap(find.byIcon(Icons.settings_outlined));
       await tester.pumpAndSettle();
-      await shot('cassette-settings');
+      await shot('test-alpha-settings');
       await controller.selectBrightness(Brightness.dark);
       await tester.pumpAndSettle();
-      await shot('cassette-dark-settings');
-      await tester.tap(find.byType(BackButton));
-      await tester.pumpAndSettle();
+      await shot('test-alpha-dark-settings');
       await tester.tap(find.byIcon(Icons.schedule));
       await tester.pumpAndSettle();
-      await shot('cassette-dark-today');
+      await shot('test-alpha-dark-today');
       await tester.tap(find.byIcon(Icons.calendar_month_outlined));
       await tester.pumpAndSettle();
-      await shot('cassette-dark-timetable');
+      await shot('test-alpha-dark-timetable');
       await tester.tap(find.byIcon(Icons.checklist));
       await tester.pumpAndSettle();
-      await shot('cassette-dark-tasks');
+      await shot('test-alpha-dark-tasks');
       await tester.tap(find.byType(FloatingActionButton));
       await tester.pumpAndSettle();
-      await shot('cassette-dark-editor');
+      await shot('test-alpha-dark-editor');
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.auto_awesome_outlined));
       await tester.pumpAndSettle();
-      await shot('cassette-dark-agent');
+      await shot('test-alpha-dark-agent');
       await controller.select(PilotStyle.defaultStyle);
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.schedule));
@@ -615,8 +635,8 @@ $$
       await tester.pumpAndSettle();
       for (final style in [
         PilotStyle.defaultStyle,
-        PilotStyle.constructivist,
-        PilotStyle.swiss,
+        PilotStyle.testAlpha,
+        PilotStyle.testBeta,
       ]) {
         await controller.select(style);
         for (final brightness in Brightness.values) {
@@ -626,15 +646,75 @@ $$
           await tester.tap(find.byIcon(Icons.calendar_month_outlined));
           await tester.pumpAndSettle();
           await shot('${style.id}-${brightness.name}-calendar');
-          await tester.tap(find.byTooltip('设置'));
+          await tester.tap(find.byIcon(Icons.settings_outlined));
           await tester.pumpAndSettle();
           await shot('${style.id}-${brightness.name}-settings');
-          await tester.tap(find.byType(BackButton));
-          await tester.pumpAndSettle();
           await tester.tap(find.byIcon(Icons.auto_awesome_outlined));
           await tester.pumpAndSettle();
         }
       }
+      // A code-drawn, neutral sample wallpaper exercises the real image layer.
+      late File demo;
+      await tester.runAsync(() async {
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder);
+        canvas.drawRect(
+          const Rect.fromLTWH(0, 0, 430, 932),
+          Paint()
+            ..shader = ui.Gradient.linear(
+              Offset.zero,
+              const Offset(430, 932),
+              [
+                const Color(0xff90aeb5),
+                const Color(0xffcfbc9e),
+                const Color(0xff8da6b8),
+              ],
+              const [0, .5, 1],
+            ),
+        );
+        canvas.drawCircle(
+          const Offset(390, 170),
+          250,
+          Paint()..color = const Color(0x30ffffff),
+        );
+        canvas.drawCircle(
+          const Offset(20, 800),
+          330,
+          Paint()..color = const Color(0x20405965),
+        );
+        final picture = recorder.endRecording();
+        final bitmap = await picture.toImage(430, 932);
+        final bytes = await bitmap.toByteData(format: ui.ImageByteFormat.png);
+        demo = File('docs/ui-previews/wallpaper-demo.png').absolute;
+        await demo.writeAsBytes(bytes!.buffer.asUint8List());
+        bitmap.dispose();
+        picture.dispose();
+        await precacheImage(
+          ResizeImage(FileImage(demo), width: 430),
+          boundary.currentContext!,
+        );
+      });
+      await controller.select(PilotStyle.testAlpha);
+      await controller.selectBrightness(Brightness.light);
+      await controller.setBackdrop(
+        BackdropSettings(
+          kind: BackdropKind.wallpaper,
+          filePath: demo.path,
+          panelOpacity: .8,
+          veilOpacity: .35,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.schedule));
+      await tester.pumpAndSettle();
+      await shot('wallpaper-upcoming');
+      await tester.tap(find.byIcon(Icons.calendar_month_outlined));
+      await tester.pumpAndSettle();
+      await shot('wallpaper-calendar');
+      await controller.selectBrightness(Brightness.dark);
+      await tester.pumpAndSettle();
+      await shot('wallpaper-calendar-dark');
+      await controller.setBackdrop(const BackdropSettings());
       await tester.pumpWidget(const SizedBox());
       controller.dispose();
     });

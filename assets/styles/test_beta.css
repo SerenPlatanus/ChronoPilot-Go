@@ -1,6 +1,6 @@
 /* Native ChronoPilot skin: root colors + component classes. */
 :root {
-  --style-id: swiss;
+  --style-id: test_beta;
   --seed: #B4242C;
   --paper: #F2F4F6;
   --surface: #FFFFFF;
@@ -21,13 +21,17 @@
   --dark-ink: #F2F5F8;
   --dark-muted: #ADB8C5;
   --dark-line: #3A4350;
-  --dark-accent: #FF9DA5;
+  --dark-accent: #8CBED4;
   --dark-stage: #29313D;
   --dark-screen: #090C10;
   --dark-signal: #D9E6F3;
   --dark-signal-red: #FFADB5;
   --dark-signal-yellow: #C6DBEB;
   --dark-danger: #FFADB5;
+  --calendar-surface: #E1E7ED;
+  --navigation-surface: #D7DFE7;
+  --dark-calendar-surface: #222A34;
+  --dark-navigation-surface: #26313E;
   --radius-card: 2;
   --border-card: 1;
   --radius-glass: 24;
@@ -50,3 +54,7 @@
 .cp-panel { --radius: 2; --border-width: 1; --border-color: line; }
 .cp-field { --radius: 2; --border-width: 1; --border-color: line; }
 .cp-dialog { --radius: 2; --border-width: 1; --border-color: line; }
+.cp-calendar-panel { --fill: calendar-surface; --radius: 2; --border-width: 1; --border-color: line; }
+.cp-navigation { --fill: navigation-surface; --radius: 0; --border-width: 1; --border-color: line; }
+.cp-sync-hint { --fill: calendar-surface; --radius: 2; --border-width: 0; }
+.cp-message { --border-width: 0; }

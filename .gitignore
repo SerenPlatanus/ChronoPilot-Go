@@ -898,3 +898,11 @@ DerivedData/
 # 本项目是应用而不是库：提交 lock 文件以锁定依赖版本，保证本地与 CI
 # 解析出同一套依赖。此规则覆盖上文拼接模板中的 pubspec.lock。
 !pubspec.lock
+
+# Local documentation and generated artwork are not part of the source repository.
+/docs/
+*.md
+/banner.png
+/assets/branding/eclipse.png
+*.apk
+*.aab

@@ -57,9 +57,7 @@ class _DraftCardState extends State<DraftCard> {
       padding: const EdgeInsets.only(top: 16),
       child: SurfacePanel(
         padding: const EdgeInsets.all(14),
-        color: v.cassette
-            ? (v.dark ? v.screen : const Color(0xffe9dfc9))
-            : null,
+        color: v.alpha ? (v.dark ? v.screen : const Color(0xffe9dfc9)) : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

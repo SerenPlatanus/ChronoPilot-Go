@@ -1,6 +1,6 @@
 /* Native ChronoPilot skin: root colors + component classes. */
 :root {
-  --style-id: cassette_future;
+  --style-id: test_alpha;
   --seed: #A62D1D;
   --paper: #E9E3D4;
   --surface: #F2EDDF;
@@ -28,9 +28,17 @@
   --dark-signal-red: #FF827A;
   --dark-signal-yellow: #72B9FF;
   --dark-danger: #FFB4AB;
+  --calendar-surface: #DCD4C1;
+  --navigation-surface: #D1C7AE;
+  --dark-calendar-surface: #1C3033;
+  --dark-navigation-surface: #24393C;
   --radius-card: 18;
   --radius-glass: 24;
   --font-ui: "Helvetica Neue", "Noto Sans CJK SC", sans-serif;
   --font-mono: monospace;
   --space-unit: 8;
 }
+.cp-calendar-panel { --fill: calendar-surface; --radius: 18; --border-width: 0; --border-color: line; }
+.cp-navigation { --fill: navigation-surface; --radius: 0; --border-width: 1; --border-color: line; }
+.cp-sync-hint { --fill: calendar-surface; --radius: 18; --border-width: 0; }
+.cp-message { --border-width: 0; }

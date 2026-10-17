@@ -28,6 +28,10 @@
   --dark-signal-red: #FF827A;
   --dark-signal-yellow: #F4ED71;
   --dark-danger: #FFB4AB;
+  --calendar-surface: #DFE5EC;
+  --navigation-surface: #D7DEE7;
+  --dark-calendar-surface: #172531;
+  --dark-navigation-surface: #202B37;
   --radius-card: 18;
   --radius-glass: 24;
   --font-ui: Roboto, "Noto Sans CJK SC", sans-serif;
@@ -43,3 +47,7 @@
 .cp-panel { --radius: 18; --border-width: 1; --border-color: line; }
 .cp-field { --radius: 8; --border-width: 1; --border-color: line; }
 .cp-dialog { --radius: 18; --border-width: 1; --border-color: line; }
+.cp-calendar-panel { --fill: calendar-surface; --radius: 18; --border-width: 0; --border-color: line; }
+.cp-navigation { --fill: navigation-surface; --radius: 0; --border-width: 1; --border-color: line; }
+.cp-sync-hint { --fill: calendar-surface; --radius: 18; --border-width: 0; }
+.cp-message { --border-width: 0; }

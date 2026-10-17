@@ -18,6 +18,7 @@ import 'settings_page.dart';
 import '../ui/styles.dart';
 import '../ui/components.dart';
 import '../ui/countdown.dart';
+import '../ui/backdrop_settings.dart';
 
 class PlannerApp extends StatefulWidget {
   final PlannerRepository? repository;
@@ -34,11 +35,13 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
   PlannerMcpServer? mcp;
   String username = '', password = '', apiKey = '', model = 'deepseek-flash';
   String? failure;
-  int tab = 0;
+  int tab = 0, contentTab = 0;
+  bool settingsVisited = false;
   String category = '', subject = '';
   String term = academicTerm(DateTime.now());
   bool showCompleted = false, refreshing = false, filtersOpen = false;
   DateTime day = DateTime.now();
+  bool syncHintDismissed = false;
   Timer? _clockTick;
   void _startClock() {
     _clockTick?.cancel();
@@ -116,10 +119,15 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
   }
 
   void changed() {
+    final status = repo?.syncStatus.values.whereType<Map>().toList() ?? [];
+    if (status.isNotEmpty && status.every((entry) => entry['error'] == null)) {
+      syncHintDismissed = true;
+    }
     if (mounted) setState(() {});
   }
 
   Future<void> refresh({bool force = false}) async {
+    if (force && !syncHintDismissed) setState(() => syncHintDismissed = true);
     if (sync == null || (!force && !sync!.shouldRefresh)) return;
     if (refreshing) {
       await sync?.refresh(force: force, interactive: force);
@@ -159,26 +167,30 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  Future<void> settings() async {
-    final accountChanged = await Navigator.push<bool>(
-      context,
-      PilotPageRoute(
-        builder: (_) => PlannerSettings(
-          repo: repo!,
-          mcp: mcp!,
-          username: username,
-          password: password,
-          apiKey: apiKey,
-          model: model,
-        ),
-      ),
-    );
+  void selectTab(int value) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      if (tab == 0 && value != tab) syncHintDismissed = true;
+      tab = value;
+      if (value == 4) {
+        settingsVisited = true;
+      } else {
+        contentTab = value;
+      }
+    });
+  }
+
+  Future<void> settingsSaved(bool accountChanged) async {
     if (!mounted) return;
     if (accountChanged == true) {
       sync?.dispose();
+      sync = null;
       chat?.dispose();
+      chat = null;
       await mcp?.stop();
+      if (!mounted) return;
       mcp?.dispose();
+      mcp = null;
       repo?.removeListener(changed);
       repo?.dispose();
       setState(() {
@@ -191,6 +203,11 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
       apiKey = await secureStore.read(key: 'planner_deepseek_key') ?? '';
       model = await secureStore.read(key: 'planner_model') ?? 'deepseek-flash';
       if (mounted) setState(() {});
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('设置已保存')));
     }
   }
 
@@ -230,9 +247,9 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
     );
     final items = filtered
         .where(
-          (e) => tab == 0
+          (e) => contentTab == 0
               ? e.upcoming(now)
-              : tab == 1
+              : contentTab == 1
               ? onDay([e], DateTime(day.year, day.month, day.day)).isNotEmpty
               : e.categoryId != 'course' && (showCompleted || !e.completed),
         )
@@ -242,7 +259,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
         (a, b) => a.countdownTarget(now)!.compareTo(b.countdownTarget(now)!),
       );
 
-    if (tab == 0) {
+    if (contentTab == 0) {
       final untimed = items
           .where((e) => e.countdownTarget(now) == null)
           .toList();
@@ -256,12 +273,12 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
         .length;
     final pagePadding = MediaQuery.sizeOf(context).width < 360 ? 12.0 : 20.0;
     return Scaffold(
-      appBar: tab == 3
+      appBar: tab >= 3
           ? null
           : AppBar(
-              title: Text(['接下来', '课表与日程', '事项', 'Agent'][tab]),
+              title: Text(['接下来', '课表与日程', '事项', 'Agent'][contentTab]),
               actions: [
-                if (tab != 3)
+                if (contentTab != 3)
                   PilotControl(
                     className: 'upcoming-filter',
                     kind: 'icon-button',
@@ -285,319 +302,396 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
                     tooltip: refreshing ? '正在更新学校数据' : '更新学校数据',
                   ),
                 ),
-                PilotControl(
-                  className: 'open-settings',
-                  kind: 'icon-button',
-                  child: IconButton(
-                    onPressed: settings,
-                    icon: const Icon(Icons.settings_outlined),
-                    tooltip: '设置',
-                  ),
-                ),
                 const SizedBox(width: 8),
               ],
             ),
-      body: ContentFrame(
-        child: tab == 3
-            ? PlannerChatPage(
-                key: ValueKey(r.scope),
-                chat: chat!,
-                apiKey: apiKey,
-                model: model,
-                beforeSend: () => refresh(),
-                onSettings: settings,
-              )
-            : RefreshIndicator(
-                onRefresh: () => refresh(force: true),
-                child: CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    SliverPadding(
-                      padding: EdgeInsets.symmetric(horizontal: pagePadding),
-                      sliver: SliverToBoxAdapter(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (tab == 0)
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  top: 16,
-                                  bottom: 14,
-                                ),
-                                child: Text(
-                                  '即将开始',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineSmall
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            if (tab == 0)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: DailyOccupancyTrace(items: termItems),
-                              ),
-                            if (tab != 0)
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  children: [
-                                    for (final t in [
-                                      ...terms,
-                                      if (r.items.any(
-                                        (e) => e.school && itemTerm(e) == null,
-                                      ))
-                                        'undated',
-                                      'all',
-                                    ])
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 6,
-                                        ),
-                                        child: PilotControl(
-                                          className: 'semester-filter',
-                                          kind: 'filter-button',
-                                          child: ChoiceChip(
-                                            label: Text(termLabel(t)),
-                                            selected: term == t,
-                                            onSelected: (_) => setState(() {
-                                              term = t;
-                                              subject = '';
-                                              final dates =
-                                                  r.items
-                                                      .where(
-                                                        (e) =>
-                                                            inTerm(e, t) &&
-                                                            e.categoryId ==
-                                                                'course' &&
-                                                            e.start != null,
-                                                      )
-                                                      .map((e) => e.start!)
-                                                      .toList()
-                                                    ..sort();
-                                              if (t != academicTerm(now) &&
-                                                  dates.isNotEmpty) {
-                                                day = dates.first;
-                                              } else if (t ==
-                                                  academicTerm(now)) {
-                                                day = now;
-                                              }
-                                            }),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            if (tab == 1)
-                              PlannerCalendar(
-                                day: day,
-                                items: filtered.toList(),
-                                onChanged: (date) => setState(() => day = date),
-                                onTimetable: () => Navigator.of(context).push(
-                                  PilotPageRoute<void>(
-                                    builder: (_) => LargeTimetable(
-                                      items: filtered.toList(),
-                                      initialDay: day,
-                                      onTap: (item) =>
-                                          editItem(context, r, item),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            if (warnings.isNotEmpty)
-                              NoticePanel(
-                                title: '有 ${warnings.length} 处安排需要调整',
-                                subtitle: warnings.first,
-                                icon: Icons.warning_amber,
-                                onTap: () => showDialog<void>(
-                                  animationStyle: AnimationStyle.noAnimation,
-                                  context: context,
-                                  builder: (c) => AlertDialog(
-                                    title: const Text('日程变化'),
-                                    content: SingleChildScrollView(
-                                      child: Text(warnings.join('\n')),
-                                    ),
-                                    actions: [
-                                      PilotControl(
-                                        className: 'sync-warning-close',
-                                        kind: 'text-button',
-                                        child: TextButton(
-                                          onPressed: () => Navigator.pop(c),
-                                          child: const Text('知道了'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            if (errors > 0)
-                              NoticePanel(
-                                title: '部分学校数据未更新',
-                                subtitle: '继续使用本地记录，点此查看更新时间',
-                                icon: Icons.cloud_off_outlined,
-                                onTap: settings,
-                              ),
-                            if (filtersOpen)
-                              ExpansionTile(
-                                initiallyExpanded: true,
-                                tilePadding: EdgeInsets.zero,
-                                title: const Text('类别与学科筛选'),
+      body: IndexedStack(
+        index: tab == 4 ? 1 : 0,
+        children: [
+          TickerMode(
+            enabled: tab != 4,
+            child: ContentFrame(
+              child: contentTab == 3
+                  ? PlannerChatPage(
+                      key: ValueKey(r.scope),
+                      chat: chat!,
+                      apiKey: apiKey,
+                      model: model,
+                      beforeSend: () => refresh(),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: () => refresh(force: true),
+                      child: CustomScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          SliverPadding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: pagePadding,
+                            ),
+                            sliver: SliverToBoxAdapter(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: Row(
-                                      children: [
-                                        _categoryChip('', '全部类别', v),
-                                        for (final c in ItemCategory.values)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              left: 8,
+                                  if (contentTab == 0)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        top: 16,
+                                        bottom: 14,
+                                      ),
+                                      child: Text(
+                                        '即将开始',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .headlineSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.bold,
                                             ),
-                                            child: _categoryChip(
-                                              c.id,
-                                              c.label,
-                                              v,
-                                            ),
-                                          ),
-                                      ],
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      Expanded(
-                                        child: DropdownButtonFormField<String>(
-                                          key: ValueKey(subject),
-                                          initialValue: subject,
-                                          isExpanded: true,
-                                          decoration: const InputDecoration(
-                                            labelText: '学科筛选',
-                                            contentPadding:
-                                                EdgeInsets.symmetric(
-                                                  horizontal: 14,
-                                                  vertical: 12,
-                                                ),
-                                          ),
-                                          items: [
-                                            const DropdownMenuItem(
-                                              value: '',
-                                              child: Text('全部学科'),
+                                  if (contentTab == 0)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 12,
+                                      ),
+                                      child:
+                                          StyleScope.maybeOf(
+                                                context,
+                                              )?.backdrop.kind ==
+                                              BackdropKind.wallpaper
+                                          ? Container(
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: v.decoration(
+                                                'overview',
+                                              ),
+                                              child: DailyOccupancyTrace(
+                                                items: termItems,
+                                              ),
+                                            )
+                                          : DailyOccupancyTrace(
+                                              items: termItems,
                                             ),
-                                            ...subjects.map(
-                                              (s) => DropdownMenuItem(
-                                                value: s,
-                                                child: Text(
-                                                  s,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
+                                    ),
+                                  if (contentTab != 0)
+                                    SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        children: [
+                                          for (final t in [
+                                            ...terms,
+                                            if (r.items.any(
+                                              (e) =>
+                                                  e.school &&
+                                                  itemTerm(e) == null,
+                                            ))
+                                              'undated',
+                                            'all',
+                                          ])
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                right: 6,
+                                              ),
+                                              child: PilotControl(
+                                                className: 'semester-filter',
+                                                kind: 'filter-button',
+                                                child: ChoiceChip(
+                                                  label: Text(termLabel(t)),
+                                                  selected: term == t,
+                                                  onSelected: (_) => setState(() {
+                                                    term = t;
+                                                    subject = '';
+                                                    final dates =
+                                                        r.items
+                                                            .where(
+                                                              (e) =>
+                                                                  inTerm(
+                                                                    e,
+                                                                    t,
+                                                                  ) &&
+                                                                  e.categoryId ==
+                                                                      'course' &&
+                                                                  e.start !=
+                                                                      null,
+                                                            )
+                                                            .map(
+                                                              (e) => e.start!,
+                                                            )
+                                                            .toList()
+                                                          ..sort();
+                                                    if (t !=
+                                                            academicTerm(now) &&
+                                                        dates.isNotEmpty) {
+                                                      day = dates.first;
+                                                    } else if (t ==
+                                                        academicTerm(now)) {
+                                                      day = now;
+                                                    }
+                                                  }),
                                                 ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  if (contentTab == 1)
+                                    PlannerCalendar(
+                                      day: day,
+                                      items: filtered.toList(),
+                                      onChanged: (date) =>
+                                          setState(() => day = date),
+                                      onTimetable: () =>
+                                          Navigator.of(context).push(
+                                            PilotPageRoute<void>(
+                                              builder: (_) => LargeTimetable(
+                                                items: filtered.toList(),
+                                                initialDay: day,
+                                                onTap: (item) =>
+                                                    editItem(context, r, item),
+                                              ),
+                                            ),
+                                          ),
+                                    ),
+                                  if (warnings.isNotEmpty)
+                                    NoticePanel(
+                                      title: '有 ${warnings.length} 处安排需要调整',
+                                      subtitle: warnings.first,
+                                      icon: Icons.warning_amber,
+                                      onTap: () => showDialog<void>(
+                                        animationStyle:
+                                            AnimationStyle.noAnimation,
+                                        context: context,
+                                        builder: (c) => AlertDialog(
+                                          title: const Text('日程变化'),
+                                          content: SingleChildScrollView(
+                                            child: Text(warnings.join('\n')),
+                                          ),
+                                          actions: [
+                                            PilotControl(
+                                              className: 'sync-warning-close',
+                                              kind: 'text-button',
+                                              child: TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(c),
+                                                child: const Text('知道了'),
                                               ),
                                             ),
                                           ],
-                                          onChanged: (value) =>
-                                              setState(() => subject = value!),
                                         ),
                                       ),
-                                      if (tab == 2)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            left: 8,
-                                          ),
-                                          child: PilotControl(
-                                            className: 'completed-filter',
-                                            kind: 'filter-button',
-                                            child: FilterChip(
-                                              label: const Text('含已完成'),
-                                              selected: showCompleted,
-                                              onSelected: (value) => setState(
-                                                () => showCompleted = value,
-                                              ),
-                                            ),
+                                    ),
+                                  if (contentTab == 0 &&
+                                      errors > 0 &&
+                                      !syncHintDismissed)
+                                    RefreshHint(
+                                      onRefresh: () => refresh(force: true),
+                                      onDismiss: () => setState(
+                                        () => syncHintDismissed = true,
+                                      ),
+                                    ),
+                                  if (filtersOpen)
+                                    ExpansionTile(
+                                      initiallyExpanded: true,
+                                      tilePadding: EdgeInsets.zero,
+                                      title: const Text('类别与学科筛选'),
+                                      children: [
+                                        SingleChildScrollView(
+                                          scrollDirection: Axis.horizontal,
+                                          child: Row(
+                                            children: [
+                                              _categoryChip('', '全部类别', v),
+                                              for (final c
+                                                  in ItemCategory.values)
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        left: 8,
+                                                      ),
+                                                  child: _categoryChip(
+                                                    c.id,
+                                                    c.label,
+                                                    v,
+                                                  ),
+                                                ),
+                                            ],
                                           ),
                                         ),
-                                    ],
-                                  ),
-                                ],
-                              ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          children: [
+                                            Expanded(
+                                              child:
+                                                  DropdownButtonFormField<
+                                                    String
+                                                  >(
+                                                    key: ValueKey(subject),
+                                                    initialValue: subject,
+                                                    isExpanded: true,
+                                                    decoration:
+                                                        const InputDecoration(
+                                                          labelText: '学科筛选',
+                                                          contentPadding:
+                                                              EdgeInsets.symmetric(
+                                                                horizontal: 14,
+                                                                vertical: 12,
+                                                              ),
+                                                        ),
+                                                    items: [
+                                                      const DropdownMenuItem(
+                                                        value: '',
+                                                        child: Text('全部学科'),
+                                                      ),
+                                                      ...subjects.map(
+                                                        (s) => DropdownMenuItem(
+                                                          value: s,
+                                                          child: Text(
+                                                            s,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                    onChanged: (value) =>
+                                                        setState(
+                                                          () =>
+                                                              subject = value!,
+                                                        ),
+                                                  ),
+                                            ),
+                                            if (contentTab == 2)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                  left: 8,
+                                                ),
+                                                child: PilotControl(
+                                                  className: 'completed-filter',
+                                                  kind: 'filter-button',
+                                                  child: FilterChip(
+                                                    label: const Text('含已完成'),
+                                                    selected: showCompleted,
+                                                    onSelected: (value) =>
+                                                        setState(
+                                                          () => showCompleted =
+                                                              value,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
 
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                top: 20,
-                                bottom: 12,
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      tab == 1
-                                          ? '${day.month}月${day.day}日 · 星期${'一二三四五六日'[day.weekday - 1]}'
-                                          : tab == 2
-                                          ? '待办事项'
-                                          : '后续安排',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleMedium,
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: 14,
+                                      bottom: 8,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            contentTab == 1
+                                                ? '${day.month}月${day.day}日 · 星期${'一二三四五六日'[day.weekday - 1]}'
+                                                : contentTab == 2
+                                                ? '待办事项'
+                                                : '后续安排',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.titleMedium,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${items.length} 项',
+                                          style: instrumentText(
+                                            color:
+                                                StyleScope.maybeOf(
+                                                      context,
+                                                    )?.backdrop.kind ==
+                                                    BackdropKind.wallpaper
+                                                ? v.ink
+                                                : v.muted,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  Text(
-                                    '${items.length} 项',
-                                    style: instrumentText(color: v.muted),
-                                  ),
                                 ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (items.isEmpty)
-                      SliverPadding(
-                        padding: EdgeInsets.symmetric(horizontal: pagePadding),
-                        sliver: SliverToBoxAdapter(
-                          child: EmptySignal(
-                            title: tab == 1 ? '当天没有日程' : '暂时没有符合条件的事项',
-                            description: tab == 1
-                                ? '换一天查看课表，或为自己添加一段安排。'
-                                : '添加任务，或调整类别与学科筛选。学校账号连接后可以同步课程和作业。',
-                            icon: tab == 1
-                                ? Icons.calendar_today_outlined
-                                : Icons.inventory_2_outlined,
-                            action: PilotControl(
-                              className: 'empty-add',
-                              kind: 'text-button',
-                              child: TextButton.icon(
-                                onPressed: () => editItem(context, r),
-                                icon: const Icon(Icons.add),
-                                label: const Text('添加事项'),
+                          ),
+                          if (items.isEmpty)
+                            SliverPadding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: pagePadding,
+                              ),
+                              sliver: SliverToBoxAdapter(
+                                child: EmptySignal(
+                                  title: contentTab == 1
+                                      ? '当天没有日程'
+                                      : '暂时没有符合条件的事项',
+                                  description: contentTab == 1
+                                      ? '换一天查看课表，或为自己添加一段安排。'
+                                      : '添加任务，或调整类别与学科筛选。学校账号连接后可以同步课程和作业。',
+                                  icon: contentTab == 1
+                                      ? Icons.calendar_today_outlined
+                                      : Icons.inventory_2_outlined,
+                                  action: PilotControl(
+                                    className: 'empty-add',
+                                    kind: 'text-button',
+                                    child: TextButton.icon(
+                                      onPressed: () => editItem(context, r),
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('添加事项'),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            )
+                          else
+                            SliverPadding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: pagePadding,
+                              ),
+                              sliver: SliverList.builder(
+                                itemCount: items.length,
+                                itemBuilder: (context, index) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: ItemTile(
+                                    item: items[index],
+                                    repo: r,
+                                    timeline: contentTab == 1,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: EdgeInsets.symmetric(horizontal: pagePadding),
-                        sliver: SliverList.builder(
-                          itemCount: items.length,
-                          itemBuilder: (context, index) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: ItemTile(
-                              item: items[index],
-                              repo: r,
-                              timeline: tab == 1,
-                            ),
-                          ),
-                        ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 96)),
+                        ],
                       ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 96)),
-                  ],
-                ),
+                    ),
+            ),
+          ),
+          if (settingsVisited)
+            TickerMode(
+              enabled: tab == 4,
+              child: PlannerSettings(
+                key: ObjectKey(r),
+                repo: r,
+                mcp: mcp!,
+                username: username,
+                password: password,
+                apiKey: apiKey,
+                model: model,
+                onSaved: settingsSaved,
               ),
+            )
+          else
+            const SizedBox.shrink(),
+        ],
       ),
-      floatingActionButton: tab == 3
+      floatingActionButton: tab >= 3
           ? null
           : PilotControl(
               className: 'item-add',
@@ -610,10 +704,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
             ),
       bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
           ? null
-          : PilotNavigation(
-              selected: tab,
-              onChanged: (value) => setState(() => tab = value),
-            ),
+          : PilotNavigation(selected: tab, onChanged: selectTab),
     );
   }
 
@@ -623,7 +714,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
     child: ChoiceChip(
       label: Text(label),
       selected: category == id,
-      labelStyle: v.cassette
+      labelStyle: v.alpha
           ? TextStyle(
               color: category == id
                   ? (v.dark ? v.screen : Colors.white)
@@ -631,7 +722,7 @@ class _PlannerAppState extends State<PlannerApp> with WidgetsBindingObserver {
               fontSize: 13,
             )
           : null,
-      selectedColor: v.cassette ? (v.dark ? v.accent : v.ink) : null,
+      selectedColor: v.alpha ? (v.dark ? v.accent : v.ink) : null,
       onSelected: (_) => setState(() => category = id),
     ),
   );
@@ -651,21 +742,21 @@ class ItemTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final v = PilotVisuals.of(context), color = courseColor(item);
     return Material(
-      color: v.surface,
+      color: v.decoration('item-card').color,
       shape: v.shape('item-card'),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => editItem(context, repo, item),
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.only(top: 7, right: 10),
+                    padding: const EdgeInsets.only(right: 10),
                     child: Container(
                       width: 15,
                       height: 15,
@@ -713,7 +804,7 @@ class ItemTile extends StatelessWidget {
                     Icon(Icons.chevron_right, color: v.muted, size: 20),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 2),
               if (item.timed)
                 _line(
                   v,
@@ -738,9 +829,9 @@ class ItemTile extends StatelessWidget {
                       ? '预计用时待填写'
                       : '预计 ${item.estimatedMinutes} 分钟',
                 ),
-              if (!timeline)
+              if (!timeline && item.countdownTarget(DateTime.now()) != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsets.only(top: 6),
                   child: CountdownView(item: item),
                 ),
             ],
@@ -751,7 +842,7 @@ class ItemTile extends StatelessWidget {
   }
 
   Widget _line(PilotVisuals v, IconData icon, String text) => Padding(
-    padding: const EdgeInsets.only(top: 4),
+    padding: const EdgeInsets.only(top: 2),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

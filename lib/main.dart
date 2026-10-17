@@ -5,6 +5,7 @@ import 'utils/global.dart';
 import 'planner/app.dart';
 import 'planner/repository.dart';
 import 'ui/styles.dart';
+import 'ui/components.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,7 +52,7 @@ class ChronoPilotRoot extends StatelessWidget {
         themeAnimationDuration: Duration.zero,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(disableAnimations: true),
-          child: child!,
+          child: AppBackdrop(child: child!),
         ),
         home: PlannerApp(
           repository: repository,

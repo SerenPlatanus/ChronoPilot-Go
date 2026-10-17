@@ -11,11 +11,13 @@ import 'features.dart';
 import 'credentials.dart';
 import 'item.dart';
 import '../ui/style_picker.dart';
+import '../ui/background_settings_page.dart';
 
 class PlannerSettings extends StatefulWidget {
   final PlannerRepository repo;
   final PlannerMcpServer mcp;
   final String username, password, apiKey, model;
+  final Future<void> Function(bool accountChanged) onSaved;
   const PlannerSettings({
     super.key,
     required this.repo,
@@ -24,6 +26,7 @@ class PlannerSettings extends StatefulWidget {
     required this.password,
     required this.apiKey,
     required this.model,
+    required this.onSaved,
   });
   @override
   State<PlannerSettings> createState() => _PlannerSettingsState();
@@ -77,8 +80,7 @@ class _PlannerSettingsState extends State<PlannerSettings> {
       }
       await widget.repo.setPreferences(preferences.text);
       if (mounted) {
-        Navigator.pop(
-          context,
+        await widget.onSaved(
           user.text.trim() != widget.username || pass.text != widget.password,
         );
       }
@@ -136,7 +138,7 @@ class _PlannerSettingsState extends State<PlannerSettings> {
   Widget build(BuildContext context) {
     final v = PilotVisuals.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
+      appBar: AppBar(automaticallyImplyLeading: false, title: const Text('设置')),
       body: ContentFrame(
         maxWidth: 760,
         child: ListView(
@@ -144,6 +146,15 @@ class _PlannerSettingsState extends State<PlannerSettings> {
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
           children: [
             const SectionHeading(title: '外观主题', code: '01 / APPEARANCE'),
+            ListTile(
+              leading: const Icon(Icons.wallpaper_outlined),
+              title: const Text('背景与透明度'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push<void>(
+                context,
+                PilotPageRoute(builder: (_) => const BackgroundSettingsPage()),
+              ),
+            ),
             const StylePicker(),
             const SectionHeading(
               title: '本科生账号',
